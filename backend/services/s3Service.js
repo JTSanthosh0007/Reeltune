@@ -6,25 +6,40 @@ const {
 } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const fs = require('fs');
+const path = require('path');
 
-// Initialize S3 client
-const s3Client = new S3Client({
+const isS3Configured = process.env.AWS_ACCESS_KEY_ID && 
+                       !process.env.AWS_ACCESS_KEY_ID.startsWith('your_') &&
+                       process.env.AWS_SECRET_ACCESS_KEY &&
+                       !process.env.AWS_SECRET_ACCESS_KEY.startsWith('your_');
+
+// Initialize S3 client only if configured
+const s3Client = isS3Configured ? new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
-});
+}) : null;
 
 const BUCKET = process.env.AWS_S3_BUCKET || 'reeltune-audio-temp';
 const URL_EXPIRY = parseInt(process.env.S3_URL_EXPIRY || '3600', 10);
 
 /**
- * Upload a file to S3
+ * Upload a file (copies locally in fallback dev mode)
  * @param {string} filePath - Local file path
  * @param {string} key - S3 object key
  */
 async function uploadFile(filePath, key) {
+  if (!isS3Configured) {
+    const publicDir = path.join(__dirname, '..', 'public', 'downloads');
+    fs.mkdirSync(publicDir, { recursive: true });
+    const destPath = path.join(publicDir, path.basename(key));
+    fs.copyFileSync(filePath, destPath);
+    console.log(`[Local Mode] Saved local download file: ${destPath}`);
+    return;
+  }
+
   const fileStream = fs.createReadStream(filePath);
   const fileStats = fs.statSync(filePath);
 
@@ -45,11 +60,17 @@ async function uploadFile(filePath, key) {
 }
 
 /**
- * Generate a pre-signed download URL for an S3 object
+ * Generate download URL (resolves to local server URL in fallback dev mode)
  * @param {string} key - S3 object key
- * @returns {string} Pre-signed URL
+ * @returns {string} download URL
  */
 async function getSignedDownloadUrl(key) {
+  if (!isS3Configured) {
+    const port = process.env.PORT || 3000;
+    console.log(`[Local Mode] Resolving local asset path for: ${key}`);
+    return `http://localhost:${port}/downloads/${path.basename(key)}`;
+  }
+
   const command = new GetObjectCommand({
     Bucket: BUCKET,
     Key: key,
@@ -64,10 +85,20 @@ async function getSignedDownloadUrl(key) {
 }
 
 /**
- * Delete a file from S3
+ * Delete a file (removes locally in fallback dev mode)
  * @param {string} key - S3 object key
  */
 async function deleteFile(key) {
+  if (!isS3Configured) {
+    const publicDir = path.join(__dirname, '..', 'public', 'downloads');
+    const destPath = path.join(publicDir, path.basename(key));
+    if (fs.existsSync(destPath)) {
+      fs.unlinkSync(destPath);
+      console.log(`[Local Mode] Deleted local download file: ${destPath}`);
+    }
+    return;
+  }
+
   const command = new DeleteObjectCommand({
     Bucket: BUCKET,
     Key: key,

@@ -36,17 +36,26 @@ class AlbumsScreen extends ConsumerWidget {
                   child: Row(
                     children: [
                       // Animated logo
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.music_note_rounded,
-                          color: Colors.white,
-                          size: 22,
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.asset(
+                          'assets/images/logo.jpg',
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              gradient: AppColors.primaryGradient,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.music_note_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
                         ),
                       ).animate().scale(
                             duration: 600.ms,

@@ -148,81 +148,90 @@ class _OnboardingPage1 extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Illustration
-          Container(
-            width: 180,
-            height: 180,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary.withValues(alpha: 0.2),
-                  AppColors.skyBlue.withValues(alpha: 0.15),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(40),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Share icon
-                Positioned(
-                  top: 30,
-                  right: 35,
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.skyBlue.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.share_rounded,
-                      color: AppColors.skyBlue,
-                      size: 24,
-                    ),
-                  ).animate(
-                    onPlay: (c) => c.repeat(reverse: true),
-                  ).scale(
-                    begin: const Offset(0.9, 0.9),
-                    end: const Offset(1.1, 1.1),
-                    duration: 2000.ms,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(40),
+            child: Image.asset(
+              'assets/images/logo.jpg',
+              width: 180,
+              height: 180,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 180,
+                height: 180,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primary.withValues(alpha: 0.2),
+                      AppColors.skyBlue.withValues(alpha: 0.15),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(40),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.3),
                   ),
                 ),
-                // Arrow
-                const Icon(
-                  Icons.arrow_forward_rounded,
-                  color: AppColors.textTertiary,
-                  size: 32,
-                ),
-                // Music icon
-                Positioned(
-                  bottom: 30,
-                  left: 35,
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Share icon
+                    Positioned(
+                      top: 30,
+                      right: 35,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: AppColors.skyBlue.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.share_rounded,
+                          color: AppColors.skyBlue,
+                          size: 24,
+                        ),
+                      ).animate(
+                        onPlay: (c) => c.repeat(reverse: true),
+                      ).scale(
+                        begin: const Offset(0.9, 0.9),
+                        end: const Offset(1.1, 1.1),
+                        duration: 2000.ms,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.music_note_rounded,
-                      color: Colors.white,
-                      size: 24,
+                    // Arrow
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: AppColors.textTertiary,
+                      size: 32,
                     ),
-                  ).animate(
-                    onPlay: (c) => c.repeat(reverse: true),
-                  ).scale(
-                    begin: const Offset(1.1, 1.1),
-                    end: const Offset(0.9, 0.9),
-                    duration: 2000.ms,
-                  ),
+                    // Music icon
+                    Positioned(
+                      bottom: 30,
+                      left: 35,
+                      child: Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.music_note_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ).animate(
+                        onPlay: (c) => c.repeat(reverse: true),
+                      ).scale(
+                        begin: const Offset(1.1, 1.1),
+                        end: const Offset(0.9, 0.9),
+                        duration: 2000.ms,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ).animate().scale(duration: 600.ms, curve: Curves.elasticOut),
 

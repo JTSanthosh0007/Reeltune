@@ -5,12 +5,15 @@ const cors = require('cors');
 const extractRoutes = require('./routes/extract');
 const { deviceRateLimiter } = require('./middleware/rateLimiter');
 
+const path = require('path');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/downloads', express.static(path.join(__dirname, 'public', 'downloads')));
 
 // Rate limiter (per device ID)
 app.use('/api', deviceRateLimiter);

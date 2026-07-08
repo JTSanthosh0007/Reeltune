@@ -41,6 +41,9 @@ async function uploadFile(filePath, key) {
   }
 
   const fileStream = fs.createReadStream(filePath);
+  fileStream.on('error', (err) => {
+    console.warn(`[S3 Stream Info] Stream closed or failed: ${err.message}`);
+  });
   const fileStats = fs.statSync(filePath);
 
   const command = new PutObjectCommand({

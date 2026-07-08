@@ -1,0 +1,267 @@
+import 'package:audio_service/audio_service.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
+
+Future<AudioHandler> initAudioHandler() async {
+  return await AudioService.init(
+    builder: () => ReelTuneAudioHandler(),
+    config: const AudioServiceConfig(
+      androidNotificationChannelId: 'com.reeltune.app.channel.audio',
+      androidNotificationChannelName: 'ReelTune Playback',
+      androidNotificationOngoing: true,
+      androidShowNotificationBadge: true,
+      notificationColor: 0xFF10B981, // Emerald green
+    ),
+  );
+}
+
+class ReelTuneAudioHandler extends BaseAudioHandler with QueueBehavior {
+  final AudioPlayer _player = AudioPlayer();
+
+  // Equalizer and audio effects (Android-only native effects, simulated on iOS)
+  AndroidEqualizer? _equalizer;
+  AndroidLoudnessEnhancer? _loudnessEnhancer;
+
+  ReelTuneAudioHandler() {
+    _initPlayer();
+    _initAudioSession();
+    _initEffects();
+  }
+
+  AudioPlayer get player => _player;
+
+  void _initPlayer() {
+    // Forward playback states
+    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+
+    // Watch position
+    _player.positionStream.listen((pos) {
+      if (mediaItem.value != null) {
+        playbackState.add(playbackState.value.copyWith(updatePosition: pos));
+      }
+    });
+
+    // Listen to processing state to handle completion
+    _player.processingStateStream.listen((state) {
+      if (state == ProcessingState.completed) {
+        skipToNext();
+      }
+    });
+  }
+
+  Future<void> _initAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+
+    // Handle interruptions (phone calls, etc.) gracefully
+    session.interruptionEventStream.listen((event) {
+      if (event.begin) {
+        switch (event.type) {
+          case AudioInterruptionType.duck:
+            _player.setVolume(0.2);
+            break;
+          case AudioInterruptionType.pause:
+          case AudioInterruptionType.unknown:
+            pause();
+            break;
+        }
+      } else {
+        switch (event.type) {
+          case AudioInterruptionType.duck:
+            _player.setVolume(1.0);
+            break;
+          case AudioInterruptionType.pause:
+            play();
+            break;
+          case AudioInterruptionType.unknown:
+            break;
+        }
+      }
+    });
+
+    // Handle audio becoming noisy (headphones unplugged)
+    session.becomingNoisyEventStream.listen((_) {
+      pause();
+    });
+  }
+
+  void _initEffects() {
+    try {
+      _equalizer = AndroidEqualizer();
+      _loudnessEnhancer = AndroidLoudnessEnhancer();
+      _player.setAudioSource(
+        AudioSource.uri(Uri.parse('asset:///assets/silence.mp3')), // Dummy to initialize pipeline
+        preload: false,
+      );
+      // Construct native pipeline if platform supports
+      _player.setAndroidAudioEffects([_equalizer!, _loudnessEnhancer!]);
+    } catch (e) {
+      // Audio effects not supported on this platform/version, fallback gracefully
+      _equalizer = null;
+      _loudnessEnhancer = null;
+    }
+  }
+
+  // --- Audio Engine Capabilities ---
+
+  @override
+  Future<void> play() => _player.play();
+
+  @override
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> seek(Duration position) => _player.seek(position);
+
+  @override
+  Future<void> stop() async {
+    await _player.stop();
+    await playbackState.firstWhere((state) => state.processingState == AudioProcessingState.idle);
+  }
+
+  @override
+  Future<void> setSpeed(double speed) => _player.setSpeed(speed);
+
+  @override
+  Future<void> setRepeatMode(AudioServiceRepeatMode repeatMode) async {
+    switch (repeatMode) {
+      case AudioServiceRepeatMode.none:
+        await _player.setLoopMode(LoopMode.off);
+        break;
+      case AudioServiceRepeatMode.one:
+        await _player.setLoopMode(LoopMode.one);
+        break;
+      case AudioServiceRepeatMode.all:
+        await _player.setLoopMode(LoopMode.all);
+        break;
+      case AudioServiceRepeatMode.group:
+        break;
+    }
+    playbackState.add(playbackState.value.copyWith(repeatMode: repeatMode));
+  }
+
+  @override
+  Future<void> setShuffleMode(AudioServiceShuffleMode shuffleMode) async {
+    final bool enableShuffle = shuffleMode == AudioServiceShuffleMode.all;
+    await _player.setShuffleModeEnabled(enableShuffle);
+    playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
+  }
+
+  // Play a specific item from path
+  Future<void> playFromPath(String path, MediaItem item) async {
+    mediaItem.add(item);
+    try {
+      final source = AudioSource.file(
+        path,
+        tag: item,
+      );
+      await _player.setAudioSource(source);
+      play();
+    } catch (e) {
+      playbackState.add(playbackState.value.copyWith(
+        errorMessage: 'Failed to load audio: $e',
+      ));
+    }
+  }
+
+  // Fade volume in/out
+  Future<void> fadeVolume(double target, Duration duration) async {
+    final double start = _player.volume;
+    final int steps = 20;
+    final double stepValue = (target - start) / steps;
+    final Duration stepDuration = Duration(milliseconds: duration.inMilliseconds ~/ steps);
+
+    for (int i = 1; i <= steps; i++) {
+      await Future.delayed(stepDuration);
+      await _player.setVolume((start + stepValue * i).clamp(0.0, 1.0));
+    }
+  }
+
+  // Enhancements Control (Equalizer & Bass Boost wrapper)
+  void setEqualizerBand(int bandIndex, double gain) {
+    final eq = _equalizer;
+    if (eq == null) return;
+    eq.parameters.then((params) {
+      if (bandIndex < params.bands.length) {
+        params.bands[bandIndex].setGain(gain);
+      }
+    });
+  }
+
+  void toggleBassBoost(bool enabled) {
+    // Approximate Bass Boost by setting low frequencies (bands 0 and 1)
+    final eq = _equalizer;
+    if (eq == null) return;
+    eq.parameters.then((params) {
+      if (params.bands.length >= 2) {
+        params.bands[0].setGain(enabled ? 12.0 : 0.0);
+        params.bands[1].setGain(enabled ? 8.0 : 0.0);
+      }
+    });
+  }
+
+  void toggleTrebleBoost(bool enabled) {
+    // Boost high frequencies (usually bands 3 and 4 in standard 5-band EQ)
+    final eq = _equalizer;
+    if (eq == null) return;
+    eq.parameters.then((params) {
+      final len = params.bands.length;
+      if (len >= 5) {
+        params.bands[len - 2].setGain(enabled ? 8.0 : 0.0);
+        params.bands[len - 1].setGain(enabled ? 12.0 : 0.0);
+      }
+    });
+  }
+
+  void toggleVocalEnhancement(bool enabled) {
+    // Boost mid-range frequencies (voice spectrum ~1kHz to 3kHz, bands 2 and 3)
+    final eq = _equalizer;
+    if (eq == null) return;
+    eq.parameters.then((params) {
+      final len = params.bands.length;
+      if (len >= 5) {
+        params.bands[1].setGain(enabled ? -2.0 : 0.0);
+        params.bands[2].setGain(enabled ? 10.0 : 0.0);
+        params.bands[3].setGain(enabled ? 8.0 : 0.0);
+      }
+    });
+  }
+
+  void toggleLoudnessNormalization(bool enabled) {
+    final enhancer = _loudnessEnhancer;
+    if (enhancer == null) return;
+    enhancer.setEnabled(enabled);
+    if (enabled) {
+      enhancer.setTargetGain(1500); // 15 dB enhancement
+    }
+  }
+
+  PlaybackState _transformEvent(PlaybackEvent event) {
+    return PlaybackState(
+      controls: [
+        MediaControl.skipToPrevious,
+        if (_player.playing) MediaControl.pause else MediaControl.play,
+        MediaControl.stop,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: _player.playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+      queueIndex: event.currentIndex,
+    );
+  }
+}

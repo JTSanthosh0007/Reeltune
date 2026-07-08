@@ -67,11 +67,11 @@ async function uploadFile(filePath, key) {
  * @param {string} key - S3 object key
  * @returns {string} download URL
  */
-async function getSignedDownloadUrl(key) {
+async function getSignedDownloadUrl(key, hostUrl) {
   if (!isS3Configured) {
-    const port = process.env.PORT || 3000;
-    console.log(`[Local Mode] Resolving local asset path for: ${key}`);
-    return `http://localhost:${port}/downloads/${path.basename(key)}`;
+    const baseUrl = hostUrl || `http://localhost:${process.env.PORT || 3000}`;
+    console.log(`[Local Mode] Resolving local asset path using baseUrl ${baseUrl} for: ${key}`);
+    return `${baseUrl}/downloads/${path.basename(key)}`;
   }
 
   const command = new GetObjectCommand({

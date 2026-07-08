@@ -66,7 +66,8 @@ router.post('/extract', async (req, res, next) => {
     console.log(`[Extract] Job ${jobId} created for URL: ${url}`);
 
     // Start extraction asynchronously
-    processJob(jobId).catch((err) => {
+    const hostUrl = `${req.protocol}://${req.get('host')}`;
+    processJob(jobId, hostUrl).catch((err) => {
       console.error(`[Extract] Job ${jobId} failed:`, err.message);
     });
 
@@ -130,7 +131,7 @@ router.post('/confirm/:jobId', async (req, res) => {
 /**
  * Process extraction job asynchronously
  */
-async function processJob(jobId) {
+async function processJob(jobId, hostUrl) {
   const job = jobs.get(jobId);
   if (!job) return;
 
@@ -142,7 +143,7 @@ async function processJob(jobId) {
     const result = await extractAudio(job.url, jobId);
 
     // Generate signed download URL
-    const downloadUrl = await getSignedDownloadUrl(result.s3Key);
+    const downloadUrl = await getSignedDownloadUrl(result.s3Key, hostUrl);
 
     // Update job with results
     job.status = 'completed';

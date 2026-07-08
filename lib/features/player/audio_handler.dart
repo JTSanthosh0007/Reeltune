@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:audio_session/audio_session.dart';
@@ -10,22 +11,22 @@ Future<AudioHandler> initAudioHandler() async {
       androidNotificationChannelName: 'ReelTune Playback',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
-      notificationColor: 0xFF10B981, // Emerald green
+      notificationColor: Color(0xFF10B981), // Emerald green
     ),
   );
 }
 
-class ReelTuneAudioHandler extends BaseAudioHandler with QueueBehavior {
-  final AudioPlayer _player = AudioPlayer();
+class ReelTuneAudioHandler extends BaseAudioHandler {
+  late final AudioPlayer _player;
 
   // Equalizer and audio effects (Android-only native effects, simulated on iOS)
   AndroidEqualizer? _equalizer;
   AndroidLoudnessEnhancer? _loudnessEnhancer;
 
   ReelTuneAudioHandler() {
+    _initEffects();
     _initPlayer();
     _initAudioSession();
-    _initEffects();
   }
 
   AudioPlayer get player => _player;
@@ -89,16 +90,19 @@ class ReelTuneAudioHandler extends BaseAudioHandler with QueueBehavior {
     try {
       _equalizer = AndroidEqualizer();
       _loudnessEnhancer = AndroidLoudnessEnhancer();
-      _player.setAudioSource(
-        AudioSource.uri(Uri.parse('asset:///assets/silence.mp3')), // Dummy to initialize pipeline
-        preload: false,
+      
+      final pipeline = AudioPipeline(
+        androidAudioEffects: [
+          _equalizer!,
+          _loudnessEnhancer!,
+        ],
       );
-      // Construct native pipeline if platform supports
-      _player.setAndroidAudioEffects([_equalizer!, _loudnessEnhancer!]);
+      _player = AudioPlayer(audioPipeline: pipeline);
     } catch (e) {
-      // Audio effects not supported on this platform/version, fallback gracefully
+      // Audio effects pipeline not supported on this platform/version, fallback gracefully
       _equalizer = null;
       _loudnessEnhancer = null;
+      _player = AudioPlayer();
     }
   }
 

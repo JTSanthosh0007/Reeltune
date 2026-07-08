@@ -121,11 +121,11 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: AppColors.deepNavy,
+      scaffoldBackgroundColor: AppColors.darkBackground,
       colorScheme: const ColorScheme.dark(
         primary: AppColors.primary,
         secondary: AppColors.skyBlue,
-        surface: AppColors.surfaceCardDark,
+        surface: AppColors.darkSurface,
         error: AppColors.error,
         onPrimary: AppColors.textOnPrimary,
         onSecondary: AppColors.textOnPrimary,
@@ -146,11 +146,11 @@ class AppTheme {
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       cardTheme: CardThemeData(
-        color: AppColors.surfaceCardDark,
+        color: AppColors.darkCard,
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.surfaceBorderDark, width: 1),
+          side: const BorderSide(color: AppColors.darkBorder, width: 1),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -163,18 +163,18 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: AppColors.darkNavy,
+        fillColor: AppColors.darkSurface,
         hintStyle: GoogleFonts.inter(
           color: AppColors.textTertiary,
           fontSize: 14,
         ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.surfaceBorderDark),
+          borderSide: const BorderSide(color: AppColors.darkBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.surfaceBorderDark),
+          borderSide: const BorderSide(color: AppColors.darkBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -183,22 +183,22 @@ class AppTheme {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       dialogTheme: DialogThemeData(
-        backgroundColor: AppColors.darkNavy,
+        backgroundColor: AppColors.darkSurface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: AppColors.surfaceBorderDark),
+          side: const BorderSide(color: AppColors.darkBorder),
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
-        backgroundColor: AppColors.darkNavy,
+        backgroundColor: AppColors.darkSurface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: AppColors.darkNavy,
+        backgroundColor: AppColors.darkSurface,
         contentTextStyle: GoogleFonts.inter(color: Colors.white),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -206,7 +206,7 @@ class AppTheme {
         behavior: SnackBarBehavior.floating,
       ),
       dividerTheme: const DividerThemeData(
-        color: AppColors.surfaceBorderDark,
+        color: AppColors.darkBorder,
         thickness: 1,
       ),
       sliderTheme: SliderThemeData(
@@ -218,20 +218,20 @@ class AppTheme {
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       popupMenuTheme: PopupMenuThemeData(
-        color: AppColors.darkNavy,
+        color: AppColors.darkSurface,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: AppColors.surfaceBorderDark),
+          side: const BorderSide(color: AppColors.darkBorder),
         ),
       ),
     );
   }
 
   static TextTheme _getTextTheme(bool isDark) {
-    final primaryColor = isDark ? Colors.white : AppColors.textPrimary;
-    final secondaryColor = isDark ? Colors.white70 : AppColors.textSecondary;
-    final tertiaryColor = isDark ? Colors.white54 : AppColors.textTertiary;
+    final primaryColor = isDark ? AppColors.darkText : AppColors.textPrimary;
+    final secondaryColor = isDark ? AppColors.darkSubtitle : AppColors.textSecondary;
+    final tertiaryColor = isDark ? AppColors.darkSubtitle.withValues(alpha: 0.7) : AppColors.textTertiary;
 
     return TextTheme(
       displayLarge: GoogleFonts.outfit(

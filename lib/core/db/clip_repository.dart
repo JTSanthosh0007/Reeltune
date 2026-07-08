@@ -35,12 +35,15 @@ class ClipRepository {
 
   Future<List<Clip>> searchClips(String query) async {
     final db = await _dbHelper.database;
-    final results = await db.query(
-      'clips',
-      where: 'title LIKE ?',
-      whereArgs: ['%$query%'],
-      orderBy: 'created_at DESC',
-    );
+    final results = await db.rawQuery('''
+      SELECT c.*
+      FROM clips c
+      LEFT JOIN albums a ON c.album_id = a.id
+      WHERE c.title LIKE ? 
+         OR a.name LIKE ? 
+         OR c.source_platform LIKE ?
+      ORDER BY c.created_at DESC
+    ''', ['%$query%', '%$query%', '%$query%']);
     return results.map((map) => Clip.fromMap(map)).toList();
   }
 

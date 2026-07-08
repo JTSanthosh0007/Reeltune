@@ -140,6 +140,11 @@ class ExtractionService {
         lowerUrl.contains('youtube.com/shorts')) {
       return AppConstants.platformYoutube;
     }
+    if (lowerUrl.contains('facebook.com') ||
+        lowerUrl.contains('fb.watch') ||
+        lowerUrl.contains('fb.com')) {
+      return AppConstants.platformFacebook;
+    }
     return AppConstants.platformLocal;
   }
 
@@ -157,6 +162,8 @@ class ExtractionService {
         return 'TikTok • $timeStr';
       case AppConstants.platformYoutube:
         return 'YouTube Short • $timeStr';
+      case AppConstants.platformFacebook:
+        return 'Facebook Reel • $timeStr';
       default:
         return 'Audio Clip • $timeStr';
     }

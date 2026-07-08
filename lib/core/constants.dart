@@ -1,8 +1,10 @@
+import 'config/env_config.dart';
+
 class AppConstants {
   AppConstants._();
 
   // Backend API
-  static const String apiBaseUrl = 'https://api.reeltune.example.com';
+  static String get apiBaseUrl => EnvConfig.apiBaseUrl;
 
   // App Groups (iOS)
   static const String appGroupId = 'group.com.reeltune.app';
@@ -26,6 +28,7 @@ class AppConstants {
   static const String platformInstagram = 'instagram';
   static const String platformTiktok = 'tiktok';
   static const String platformYoutube = 'youtube';
+  static const String platformFacebook = 'facebook';
   static const String platformLocal = 'local';
 
   // Shared Preferences keys

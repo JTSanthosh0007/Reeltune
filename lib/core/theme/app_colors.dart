@@ -105,17 +105,19 @@ class AppColors {
   );
 
   // ── Dark Mode Colors ──
-  static const Color deepNavy = Color(0xFF0A0E27);
-  static const Color darkNavy = Color(0xFF101436);
-  static const Color midNavy = Color(0xFF1A1F45);
-  static const Color surfaceCardDark = Color(0xFF151937);
-  static const Color surfaceBorderDark = Color(0xFF2A2F55);
+  static const Color darkBackground = Color(0xFF0B0F0C);
+  static const Color darkSurface = Color(0xFF121815);
+  static const Color darkCard = Color(0xFF1A1F1D);
+  static const Color darkText = Color(0xFFF5F7F6);
+  static const Color darkSubtitle = Color(0xFFA1A7A4);
+  static const Color darkBorder = Color(0xFF2B2F2D);
+  
   static const Color glassBgDark = Color(0x1AFFFFFF);
   static const Color glassBorderDark = Color(0x33FFFFFF);
 
   // ── Dark Mode Gradients ──
   static const LinearGradient darkBackgroundGradient = LinearGradient(
-    colors: [deepNavy, darkNavy, Color(0xFF0F1130)],
+    colors: [darkBackground, darkSurface],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );
@@ -128,12 +130,12 @@ class AppColors {
 
   static Color getAdaptiveSurfaceCard(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? surfaceCardDark : surfaceCard;
+    return isDark ? darkCard : surfaceCard;
   }
 
   static Color getAdaptiveSurfaceBorder(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return isDark ? surfaceBorderDark : surfaceBorder;
+    return isDark ? darkBorder : surfaceBorder;
   }
 
   static Color getAdaptiveGlassBg(BuildContext context) {

@@ -134,7 +134,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                       ),
                                       const SizedBox(height: 12),
                                       Text(
-                                        'No clips found for "$query"',
+                                        'No matching songs or albums found.',
                                         style: Theme.of(context)
                                             .textTheme
                                             .bodyMedium,

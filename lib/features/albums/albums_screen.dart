@@ -10,7 +10,10 @@ import 'album_providers.dart';
 import 'album_detail_screen.dart';
 import 'widgets/album_card.dart';
 import 'widgets/create_album_dialog.dart';
-
+import 'package:flutter/services.dart';
+import '../../core/network/extraction_service.dart';
+import '../share_intent/share_intent_provider.dart';
+import '../share_intent/widgets/extraction_bottom_sheet.dart';
 class AlbumsScreen extends ConsumerWidget {
   const AlbumsScreen({super.key});
 
@@ -95,6 +98,10 @@ class AlbumsScreen extends ConsumerWidget {
                     style: Theme.of(context).textTheme.bodyMedium,
                   ).animate().fadeIn(delay: 200.ms, duration: 400.ms),
                 ),
+              ),
+
+              const SliverToBoxAdapter(
+                child: _PasteLinkCard(),
               ),
 
               // Albums grid
@@ -209,10 +216,10 @@ class _ActionButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: isDark ? AppColors.darkNavy : AppColors.gray100,
+          color: isDark ? AppColors.darkSurface : AppColors.gray100,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isDark ? AppColors.surfaceBorderDark : AppColors.surfaceBorder,
+            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
           ),
         ),
         child: Icon(
@@ -301,5 +308,145 @@ class _EmptyState extends StatelessWidget {
         ),
       ),
     ).animate().fadeIn(duration: 500.ms);
+  }
+}
+
+class _PasteLinkCard extends ConsumerStatefulWidget {
+  const _PasteLinkCard();
+
+  @override
+  ConsumerState<_PasteLinkCard> createState() => _PasteLinkCardState();
+}
+
+class _PasteLinkCardState extends ConsumerState<_PasteLinkCard> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null) {
+      setState(() {
+        _controller.text = data!.text!;
+      });
+    }
+  }
+
+  void _handleAnalyze() {
+    final url = _controller.text.trim();
+    if (url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please paste a link first')),
+      );
+      return;
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid URL (starting with http/https)')),
+      );
+      return;
+    }
+
+    _controller.clear();
+    FocusScope.of(context).unfocus();
+
+    final platform = ExtractionService.detectPlatform(url);
+    ref.read(extractionFlowProvider.notifier).startExtraction(
+          url: url,
+          platform: platform,
+        );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const ExtractionBottomSheet(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.getAdaptiveSurfaceCard(context),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.getAdaptiveSurfaceBorder(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Paste Reel Link',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  decoration: InputDecoration(
+                    hintText: 'Paste Instagram, YouTube, TikTok or FB link...',
+                    prefixIcon: const Icon(Icons.link_rounded, color: AppColors.primary),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.content_paste_rounded, color: AppColors.primary),
+                      onPressed: _pasteFromClipboard,
+                      tooltip: 'Paste from clipboard',
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton(
+              onPressed: _handleAnalyze,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.analytics_outlined),
+                  SizedBox(width: 8),
+                  Text('Analyze Link', style: TextStyle(fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -678,3 +678,4 @@ class _PasteLinkCardState extends ConsumerState<_PasteLinkCard> {
       ),
     );
   }
+}

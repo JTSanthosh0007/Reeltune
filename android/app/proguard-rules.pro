@@ -22,3 +22,5 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -dontwarn sun.misc.**
+-dontwarn com.google.android.play.core.**
+

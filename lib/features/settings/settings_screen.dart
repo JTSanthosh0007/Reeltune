@@ -1,9 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Clip;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:path_provider/path_provider.dart';
+
+import '../../core/models/clip.dart';
+import '../../core/models/album.dart';
+import '../../core/db/album_repository.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/storage/file_storage_service.dart';
@@ -243,7 +247,7 @@ class SettingsScreen extends ConsumerWidget {
                             icon: Icons.backup_rounded,
                             title: 'Backup Library',
                             subtitle: 'Export data to backup file',
-                            color: Colors.emerald,
+                            color: Colors.green,
                             onTap: () => _backupLibrary(context, ref),
                           ),
                           _buildQuickActionCard(
@@ -1143,16 +1147,17 @@ class SettingsScreen extends ConsumerWidget {
       final clipsData = backupData['clips'] as List<dynamic>;
       final albumsData = backupData['albums'] as List<dynamic>;
 
-      final repo = ref.read(clipRepositoryProvider);
+      final clipRepo = ref.read(clipRepositoryProvider);
+      final albumRepo = ref.read(albumRepositoryProvider);
       // Restore each album & clip
       for (final albumMap in albumsData) {
         final album = Album.fromMap(albumMap as Map<String, dynamic>);
-        await repo.createAlbum(id: album.id, name: album.name, isSystem: album.isSystem, coverColor: album.coverColor);
+        await albumRepo.saveAlbum(album);
       }
 
       for (final clipMap in clipsData) {
         final clip = Clip.fromMap(clipMap as Map<String, dynamic>);
-        await repo.saveClip(clip);
+        await clipRepo.insertClip(clip);
       }
 
       ref.invalidate(settingsStatsProvider);

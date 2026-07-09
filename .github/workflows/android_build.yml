@@ -50,15 +50,62 @@ jobs:
             echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
           fi
 
-      - name: Build Release APK
+      - name: Build Development APK
         env:
           KEYSTORE_FILE_PATH: upload-keystore.jks
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release --dart-define=APP_ENV=development --dart-define=USE_TEST_ADS=true
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/ReelTune-Development.apk
 
-      - name: Upload Build Artifact
+      - name: Build Testing APK
+        env:
+          KEYSTORE_FILE_PATH: upload-keystore.jks
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          flutter build apk --release --dart-define=APP_ENV=testing --dart-define=USE_TEST_ADS=true
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/ReelTune-Testing.apk
+
+      - name: Build Production APK
+        env:
+          KEYSTORE_FILE_PATH: upload-keystore.jks
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          flutter build apk --release --dart-define=APP_ENV=production --dart-define=USE_TEST_ADS=false
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/ReelTune-Production.apk
+
+      - name: Build Production AAB (Bundle)
+        env:
+          KEYSTORE_FILE_PATH: upload-keystore.jks
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          flutter build appbundle --release --dart-define=APP_ENV=production --dart-define=USE_TEST_ADS=false
+          mv build/app/outputs/bundle/release/app-release.aab build/app/outputs/bundle/release/ReelTune-Release.aab
+
+      - name: Upload Development APK
         uses: actions/upload-artifact@v4
         with:
-          name: reeltune-production-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: ReelTune-Development
+          path: build/app/outputs/flutter-apk/ReelTune-Development.apk
+
+      - name: Upload Testing APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelTune-Testing
+          path: build/app/outputs/flutter-apk/ReelTune-Testing.apk
+
+      - name: Upload Production APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelTune-Production
+          path: build/app/outputs/flutter-apk/ReelTune-Production.apk
+
+      - name: Upload Production AAB (Bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelTune-Release-AAB
+          path: build/app/outputs/bundle/release/ReelTune-Release.aab

@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'BuildConfig.dart';
+import 'AdMobConfig.dart';
+
 class EnvConfig {
   EnvConfig._();
 
@@ -10,11 +13,11 @@ class EnvConfig {
   static String get apiBaseUrl => _apiBaseUrl;
 
   static Future<void> initialize() async {
-    // Load the correct file based on build mode
-    final String envFile = kDebugMode ? '.env.development' : '.env.production';
+    final String envFile = BuildConfig.envFileName;
     try {
       final content = await rootBundle.loadString(envFile);
       final lines = content.split('\n');
+      final Map<String, String> keys = {};
       for (final line in lines) {
         final trimmed = line.trim();
         if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
@@ -22,6 +25,7 @@ class EnvConfig {
         if (parts.length >= 2) {
           final key = parts[0].trim();
           final value = parts.sublist(1).join('=').trim();
+          keys[key] = value;
           if (key == 'API_BASE_URL') {
             _apiBaseUrl = value;
             // Handle Android emulator localhost mapping dynamically
@@ -35,6 +39,7 @@ class EnvConfig {
           }
         }
       }
+      AdMobConfig.load(keys);
     } catch (e) {
       debugPrint('Error loading env file $envFile: $e. Falling back to default.');
     }

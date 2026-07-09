@@ -64,6 +64,15 @@ class AlbumRepository {
     return album;
   }
 
+  Future<void> saveAlbum(Album album) async {
+    final db = await _dbHelper.database;
+    await db.insert(
+      'albums',
+      album.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
   Future<void> updateAlbum(Album album) async {
     final db = await _dbHelper.database;
     await db.update(

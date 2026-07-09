@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui show Clip;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -236,7 +237,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
                           width: 4,
                         ),
                       ),
-                      clipBehavior: Clip.antiAlias,
+                      clipBehavior: ui.Clip.antiAlias,
                       child: _buildArtwork(album, coverColor),
                     ),
                     // Center Spindle Hole
@@ -535,7 +536,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
   void _showFullscreenArtwork(BuildContext context, Album? album, Color fallbackColor) {
     showDialog(
       context: context,
-      barrierColor: Colors.black90,
+      barrierColor: Colors.black.withValues(alpha: 0.9),
       builder: (context) => GestureDetector(
         onTap: () => Navigator.of(context).pop(),
         child: Dialog(

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'core/db/album_repository.dart';
 import 'core/db/clip_repository.dart';
 import 'core/db/demo_data_initializer.dart';
 import 'core/config/env_config.dart';
+import 'core/config/AdManager.dart';
 import 'core/ads/AppOpenService.dart';
 import 'core/ads/InterstitialService.dart';
 import 'core/ads/RewardedService.dart';
@@ -20,14 +20,16 @@ Future<void> main() async {
   // Create ProviderContainer early so the app can start rendering
   final container = ProviderContainer();
 
-  // Run all independent initialization tasks concurrently instead of sequentially
+  // Load EnvConfig first so environment variables are available for AdMob config
+  await EnvConfig.initialize();
+
+  // Run remaining initialization concurrently
   final results = await Future.wait<dynamic>([
-    MobileAds.instance.initialize(), // index 0
-    EnvConfig.initialize(),          // index 1
-    initAudioHandler(),              // index 2
+    AdManager.initialize(), // index 0
+    initAudioHandler(),     // index 1
   ]);
 
-  audioHandler = results[2] as AudioHandler;
+  audioHandler = results[1] as AudioHandler;
 
   // Launch the app immediately — defer non-critical work to after the first frame
   runApp(

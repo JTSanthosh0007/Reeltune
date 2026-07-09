@@ -69,5 +69,6 @@ flutter:
     - assets/images/
     - .env.development
     - .env.production
+    - .env.testing
 
 

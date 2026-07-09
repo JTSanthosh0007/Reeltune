@@ -5,7 +5,12 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/models/album.dart';
+import '../../core/models/clip.dart';
+import '../../core/db/clip_repository.dart';
+import '../../shared/widgets/cached_artwork_image.dart';
 import '../albums/album_providers.dart';
+import '../../main.dart';
+import 'audio_handler.dart';
 import 'player_provider.dart';
 
 class FullPlayerScreen extends ConsumerStatefulWidget {
@@ -17,7 +22,7 @@ class FullPlayerScreen extends ConsumerStatefulWidget {
 
 class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with SingleTickerProviderStateMixin {
   late final AnimationController _rotationController;
-  bool _isFavorited = false;
+  double? _dragValue;
 
   @override
   void initState() {
@@ -96,6 +101,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
       _rotationController.stop();
     }
 
+    final isFavoriteAsync = ref.watch(playerClipFavoriteProvider(clip.id));
+    final isFavorite = isFavoriteAsync.value ?? false;
+
     // Get current album details for cover image resolution — safely nullable
     final albums = ref.watch(albumsProvider).value ?? [];
     Album? album;
@@ -163,79 +171,89 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
 
           const Spacer(),
 
-          // 3. Spinning Vinyl Record Design
+          // 3. Spinning Vinyl Record Design with Interactive Gestures
           Center(
-            child: AnimatedBuilder(
-              animation: _rotationController,
-              builder: (context, child) {
-                return Transform.rotate(
-                  angle: _rotationController.value * 2 * 3.14159,
-                  child: child,
-                );
+            child: GestureDetector(
+              onTap: () => _showFullscreenArtwork(context, album, coverColor),
+              onDoubleTap: () async {
+                await ref.read(clipRepositoryProvider).toggleFavorite(clip.id, !isFavorite);
+                ref.invalidate(playerClipFavoriteProvider(clip.id));
+                ref.invalidate(recentClipsProvider);
+                ref.invalidate(albumsProvider);
               },
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Outer Vinyl Disc
-                  Container(
-                    width: 260,
-                    height: 260,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isDark ? const Color(0xFF0F1210) : Colors.grey[850],
-                      boxShadow: [
-                        BoxShadow(
-                          color: coverColor.withValues(alpha: 0.15),
-                          blurRadius: 40,
-                          spreadRadius: 8,
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Concentric grooves
-                  ...List.generate(6, (index) {
-                    final size = 260.0 - (index * 25.0);
-                    return Container(
-                      width: size,
-                      height: size,
+              onLongPress: () => _showSongInfoBottomSheet(context, clip, album),
+              child: AnimatedBuilder(
+                animation: _rotationController,
+                builder: (context, child) {
+                  return Transform.rotate(
+                    angle: _rotationController.value * 2 * 3.14159,
+                    child: child,
+                  );
+                },
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    // Outer Vinyl Disc
+                    Container(
+                      width: 260,
+                      height: 260,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
+                        color: isDark ? const Color(0xFF0F1210) : Colors.grey[850],
+                        boxShadow: [
+                          BoxShadow(
+                            color: coverColor.withValues(alpha: 0.15),
+                            blurRadius: 40,
+                            spreadRadius: 8,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Concentric grooves
+                    ...List.generate(6, (index) {
+                      final size = 260.0 - (index * 25.0);
+                      return Container(
+                        width: size,
+                        height: size,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.04),
+                            width: 1,
+                          ),
+                        ),
+                      );
+                    }),
+                    // Center Album Cover
+                    Container(
+                      width: 100,
+                      height: 100,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: coverColor.withValues(alpha: 0.2),
                         border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.04),
-                          width: 1,
+                          color: isDark ? AppColors.darkBackground : Colors.white,
+                          width: 4,
                         ),
                       ),
-                    );
-                  }),
-                  // Center Album Cover
-                  Container(
-                    width: 100,
-                    height: 100,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: coverColor.withValues(alpha: 0.2),
-                      border: Border.all(
+                      clipBehavior: Clip.antiAlias,
+                      child: _buildArtwork(album, coverColor),
+                    ),
+                    // Center Spindle Hole
+                    Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
                         color: isDark ? AppColors.darkBackground : Colors.white,
-                        width: 4,
+                        border: Border.all(
+                          color: AppColors.primary,
+                          width: 2,
+                        ),
                       ),
                     ),
-                    clipBehavior: Clip.antiAlias,
-                    child: _buildArtwork(album, coverColor),
-                  ),
-                  // Center Spindle Hole
-                  Container(
-                    width: 18,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isDark ? AppColors.darkBackground : Colors.white,
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -273,14 +291,15 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
                   ),
                 ),
                 IconButton(
-                  onPressed: () {
-                    setState(() {
-                      _isFavorited = !_isFavorited;
-                    });
+                  onPressed: () async {
+                    await ref.read(clipRepositoryProvider).toggleFavorite(clip.id, !isFavorite);
+                    ref.invalidate(playerClipFavoriteProvider(clip.id));
+                    ref.invalidate(recentClipsProvider);
+                    ref.invalidate(albumsProvider);
                   },
                   icon: Icon(
-                    _isFavorited ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                    color: _isFavorited ? AppColors.primary : (isDark ? Colors.white70 : AppColors.textSecondary),
+                    isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: isFavorite ? AppColors.coral : (isDark ? Colors.white70 : AppColors.textSecondary),
                     size: 28,
                   ),
                 ),
@@ -290,52 +309,72 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
 
           const SizedBox(height: 16),
 
-          // 5. Seek Bar / Progress Bar
+          // 5. Seek Bar / Progress Bar (StreamBuilder for smooth 60fps seek updates)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 3,
-                    activeTrackColor: AppColors.primary,
-                    inactiveTrackColor: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-                    thumbColor: AppColors.primary,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                    overlayColor: AppColors.primary.withValues(alpha: 0.15),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                  ),
-                  child: Slider(
-                    value: playerState.progress.clamp(0.0, 1.0),
-                    onChanged: (value) {
-                      final position = Duration(
-                        milliseconds: (value * playerState.duration.inMilliseconds).round(),
-                      );
-                      ref.read(playerProvider.notifier).seek(position);
-                    },
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        _formatDuration(playerState.position),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
-                            ),
+            child: StreamBuilder<Duration>(
+              stream: (audioHandler as ReelTuneAudioHandler).player.positionStream,
+              builder: (context, snapshot) {
+                final currentPosition = _dragValue != null
+                    ? Duration(milliseconds: (_dragValue! * playerState.duration.inMilliseconds).round())
+                    : (snapshot.data ?? playerState.position);
+                final progress = playerState.duration.inMilliseconds > 0
+                    ? currentPosition.inMilliseconds / playerState.duration.inMilliseconds
+                    : 0.0;
+
+                return Column(
+                  children: [
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3,
+                        activeTrackColor: AppColors.primary,
+                        inactiveTrackColor: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                        thumbColor: AppColors.primary,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayColor: AppColors.primary.withValues(alpha: 0.15),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                       ),
-                      Text(
-                        _formatDuration(playerState.duration),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
-                            ),
+                      child: Slider(
+                        value: progress.clamp(0.0, 1.0),
+                        onChanged: (value) {
+                          setState(() {
+                            _dragValue = value;
+                          });
+                        },
+                        onChangeEnd: (value) async {
+                          final position = Duration(
+                            milliseconds: (value * playerState.duration.inMilliseconds).round(),
+                          );
+                          await ref.read(playerProvider.notifier).seek(position);
+                          setState(() {
+                            _dragValue = null;
+                          });
+                        },
                       ),
-                    ],
-                  ),
-                ),
-              ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _formatDuration(currentPosition),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                                ),
+                          ),
+                          Text(
+                            _formatDuration(playerState.duration),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
 
@@ -483,27 +522,123 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
 
   /// Builds the album artwork with proper error handling and fallback
   Widget _buildArtwork(Album? album, Color coverColor) {
-    if (album != null && album.coverImagePath != null) {
-      final file = File(album.coverImagePath!);
-      if (file.existsSync()) {
-        return Image(
-          image: FileImage(file),
-          fit: BoxFit.cover,
-          width: 100,
-          height: 100,
-          gaplessPlayback: true,
-          errorBuilder: (_, __, ___) => Icon(
-            Icons.music_note_rounded,
-            color: coverColor,
-            size: 40,
+    return CachedArtworkImage(
+      imagePath: album?.coverImagePath,
+      size: 100,
+      borderRadius: BorderRadius.circular(50), // Circular center cover art for vinyl record
+      fallbackColor: coverColor,
+      fallbackIcon: Icons.music_note_rounded,
+      fallbackIconSize: 40,
+    );
+  }
+
+  void _showFullscreenArtwork(BuildContext context, Album? album, Color fallbackColor) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black90,
+      builder: (context) => GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: EdgeInsets.zero,
+          child: InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 3.0,
+            child: Center(
+              child: Hero(
+                tag: 'album_artwork_fullscreen',
+                child: CachedArtworkImage(
+                  imagePath: album?.coverImagePath,
+                  size: MediaQuery.of(context).size.width * 0.9,
+                  borderRadius: BorderRadius.circular(24),
+                  fallbackColor: fallbackColor,
+                  fallbackIcon: Icons.album_rounded,
+                  fallbackIconSize: 120,
+                ),
+              ),
+            ),
           ),
-        );
-      }
-    }
-    return Icon(
-      Icons.music_note_rounded,
-      color: coverColor,
-      size: 40,
+        ),
+      ),
+    );
+  }
+
+  void _showSongInfoBottomSheet(BuildContext context, Clip clip, Album? album) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkCard : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Song Information',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : AppColors.textPrimary,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              _infoRow(context, 'Title', clip.title),
+              _infoRow(context, 'Artist', clip.artist ?? 'Unknown Artist'),
+              _infoRow(context, 'Album', album?.name ?? 'Single Clip'),
+              _infoRow(context, 'Duration', clip.formattedDuration),
+              _infoRow(context, 'Platform', clip.sourcePlatform?.toUpperCase() ?? 'LOCAL'),
+              _infoRow(context, 'File Path', clip.filePath, isPath: true),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(BuildContext context, String label, String value, {bool isPath = false}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: isDark ? Colors.white : AppColors.textPrimary,
+                fontSize: 13,
+              ),
+              maxLines: isPath ? 2 : 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -666,3 +801,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
     );
   }
 }
+
+final playerClipFavoriteProvider = FutureProvider.family<bool, String>((ref, clipId) async {
+  final clip = await ref.read(clipRepositoryProvider).getClip(clipId);
+  return clip?.isFavorite ?? false;
+});
+

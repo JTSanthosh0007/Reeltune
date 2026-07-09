@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/models/album.dart';
+import '../../shared/widgets/cached_artwork_image.dart';
+import '../albums/album_providers.dart';
 import 'player_provider.dart';
 import 'full_player_screen.dart';
 
@@ -43,6 +46,13 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   @override
   Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
+    final albums = ref.watch(albumsProvider).value ?? [];
+    Album? album;
+    if (playerState.currentClip != null) {
+      try {
+        album = albums.firstWhere((a) => a.id == playerState.currentClip!.albumId);
+      } catch (_) {}
+    }
 
     if (!playerState.hasClip) {
       _hasAnimated = false;
@@ -54,6 +64,10 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
       _hasAnimated = true;
       _slideController.forward(from: 0);
     }
+
+    final coverColor = album != null && album.coverColor != null
+        ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
+        : AppColors.primary;
 
     return SlideTransition(
       position: _slideAnimation,
@@ -68,12 +82,16 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
         },
         onVerticalDragEnd: (details) {
           if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
+            // Swipe Up -> Open Full Player
             showModalBottomSheet(
               context: context,
               isScrollControlled: true,
               backgroundColor: Colors.transparent,
               builder: (_) => const FullPlayerScreen(),
             );
+          } else if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
+            // Swipe Down -> Dismiss Mini Player (Stop playback & clear state)
+            ref.read(playerProvider.notifier).stop();
           }
         },
         child: Container(
@@ -110,9 +128,19 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
               // Controls
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
                 child: Row(
                   children: [
+                    // Artwork
+                    CachedArtworkImage(
+                      imagePath: album?.coverImagePath,
+                      size: 40,
+                      borderRadius: BorderRadius.circular(8),
+                      fallbackColor: coverColor,
+                      fallbackIcon: Icons.music_note_rounded,
+                      fallbackIconSize: 20,
+                    ),
+                    const SizedBox(width: 12),
                     // Clip info
                     Expanded(
                       child: Column(
@@ -124,16 +152,21 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                             style: Theme.of(context).textTheme.titleSmall?.copyWith(
                                   color: AppColors.textPrimary,
                                   fontSize: 13,
+                                  fontWeight: FontWeight.bold,
                                 ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${playerState.currentClip!.platformIcon} ${playerState.currentClip!.formattedDuration}',
+                            playerState.currentClip!.artist != null && playerState.currentClip!.artist!.isNotEmpty && playerState.currentClip!.artist != 'Unknown Artist'
+                                ? playerState.currentClip!.artist!
+                                : '${playerState.currentClip!.platformIcon} Saved Sound',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   fontSize: 11,
                                 ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),

@@ -120,12 +120,6 @@ class PlaylistDetailScreen extends ConsumerWidget {
                                         child: ElevatedButton.icon(
                                           onPressed: () {
                                             ref.read(playerProvider.notifier).playQueue(clips, 0);
-                                            showModalBottomSheet(
-                                              context: context,
-                                              isScrollControlled: true,
-                                              backgroundColor: Colors.transparent,
-                                              builder: (_) => const FullPlayerScreen(),
-                                            );
                                           },
                                           icon: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 24),
                                           label: const Text(
@@ -151,12 +145,6 @@ class PlaylistDetailScreen extends ConsumerWidget {
                                       onTap: () {
                                         final shuffled = List<Clip>.from(clips)..shuffle();
                                         ref.read(playerProvider.notifier).playQueue(shuffled, 0);
-                                        showModalBottomSheet(
-                                          context: context,
-                                          isScrollControlled: true,
-                                          backgroundColor: Colors.transparent,
-                                          builder: (_) => const FullPlayerScreen(),
-                                        );
                                       },
                                       child: Container(
                                         width: 52,
@@ -203,12 +191,6 @@ class PlaylistDetailScreen extends ConsumerWidget {
                                 index: index,
                                 onPlay: () {
                                   ref.read(playerProvider.notifier).playQueue(clips, index);
-                                  showModalBottomSheet(
-                                    context: context,
-                                    isScrollControlled: true,
-                                    backgroundColor: Colors.transparent,
-                                    builder: (_) => const FullPlayerScreen(),
-                                  );
                                 },
                                 onRename: null, // Custom playlist items cannot be renamed directly
                                 onDelete: () async {

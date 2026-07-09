@@ -64,14 +64,14 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
 
-              // 2. Greeting Header
+              // 2. Greeting Header (Dynamic based on device hour)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Good Morning 👋',
+                      _getGreeting(),
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             fontSize: 26,
@@ -254,13 +254,12 @@ class HomeScreen extends ConsumerWidget {
                       return _RecentClipListTile(
                         clip: clip,
                         onPlay: () {
-                          ref.read(playerProvider.notifier).playQueue(clips, index);
-                          showModalBottomSheet(
-                            context: context,
-                            isScrollControlled: true,
-                            backgroundColor: Colors.transparent,
-                            builder: (_) => const FullPlayerScreen(),
-                          );
+                          final playerState = ref.read(playerProvider);
+                          if (playerState.currentClip?.id == clip.id) {
+                            ref.read(playerProvider.notifier).togglePlayPause();
+                          } else {
+                            ref.read(playerProvider.notifier).playQueue(clips, index);
+                          }
                         },
                       );
                     },
@@ -377,6 +376,23 @@ class _RecentClipListTile extends ConsumerWidget {
     required this.onPlay,
   });
 
+  String _formatLastPlayed(int? timestamp) {
+    if (timestamp == null) return '';
+    final now = DateTime.now();
+    final playedTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final difference = now.difference(playedTime);
+
+    if (difference.inMinutes < 1) {
+      return 'Just now';
+    } else if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    } else if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    } else {
+      return '${difference.inDays}d ago';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -392,6 +408,11 @@ class _RecentClipListTile extends ConsumerWidget {
         ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
         : AppColors.primary;
 
+    final playerState = ref.watch(playerProvider);
+    final isCurrent = playerState.currentClip?.id == clip.id;
+    final isPlaying = isCurrent && playerState.isPlaying;
+    final isLoading = isCurrent && playerState.isLoading;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: GestureDetector(
@@ -402,7 +423,8 @@ class _RecentClipListTile extends ConsumerWidget {
             color: isDark ? AppColors.darkCard : Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+              color: isCurrent ? AppColors.primary : (isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
+              width: isCurrent ? 1.5 : 1.0,
             ),
           ),
           child: Row(
@@ -419,7 +441,7 @@ class _RecentClipListTile extends ConsumerWidget {
 
               const SizedBox(width: 14),
 
-              // Title and duration
+              // Title, Artist, and last played time
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,23 +450,49 @@ class _RecentClipListTile extends ConsumerWidget {
                       clip.title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white : AppColors.textPrimary,
+                            color: isCurrent ? AppColors.primary : (isDark ? Colors.white : AppColors.textPrimary),
                           ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
-                      clip.formattedDuration,
+                      clip.artist != null && clip.artist!.isNotEmpty && clip.artist != 'Unknown Artist'
+                          ? '${clip.artist} • ${clip.formattedDuration}'
+                          : '${clip.platformIcon} ${clip.formattedDuration}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                            fontSize: 11,
                           ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    if (clip.lastPlayedAt != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Played ${_formatLastPlayed(clip.lastPlayedAt)}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              fontSize: 10,
+                              color: AppColors.textTertiary,
+                            ),
+                      ),
+                    ],
                   ],
                 ),
               ),
 
-              // Play icon on right
+              // Favorite Heart Button
+              IconButton(
+                icon: Icon(
+                  clip.isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: clip.isFavorite ? AppColors.coral : AppColors.textTertiary,
+                  size: 20,
+                ),
+                onPressed: () {
+                  ref.read(recentClipsProvider.notifier).toggleFavorite(clip.id, !clip.isFavorite);
+                },
+              ),
+
+              // Play / Pause / Spinner icon on right
               Container(
                 width: 36,
                 height: 36,
@@ -452,10 +500,21 @@ class _RecentClipListTile extends ConsumerWidget {
                   color: isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.gray100,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.play_arrow_rounded,
-                  color: AppColors.primary,
-                  size: 20,
+                child: Center(
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : Icon(
+                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                 ),
               ),
             ],
@@ -463,5 +522,18 @@ class _RecentClipListTile extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+String _getGreeting() {
+  final hour = DateTime.now().hour;
+  if (hour >= 5 && hour < 12) {
+    return 'Good Morning 👋';
+  } else if (hour >= 12 && hour < 17) {
+    return 'Good Afternoon ☀️';
+  } else if (hour >= 17 && hour < 21) {
+    return 'Good Evening 🌇';
+  } else {
+    return 'Good Night 🌙';
   }
 }

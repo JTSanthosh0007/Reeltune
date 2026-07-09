@@ -177,12 +177,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                       ref
                                           .read(playerProvider.notifier)
                                           .playClip(clip);
-                                      showModalBottomSheet(
-                                        context: context,
-                                        isScrollControlled: true,
-                                        backgroundColor: Colors.transparent,
-                                        builder: (_) => const FullPlayerScreen(),
-                                      );
                                     },
                                   );
                                 },

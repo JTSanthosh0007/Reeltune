@@ -246,12 +246,6 @@ class AlbumDetailScreen extends ConsumerWidget {
                                             // Trigger queue playback with a shuffled copy
                                             final shuffledClips = List<Clip>.from(detail.clips)..shuffle();
                                             ref.read(playerProvider.notifier).playQueue(shuffledClips, 0);
-                                            showModalBottomSheet(
-                                              context: context,
-                                              isScrollControlled: true,
-                                              backgroundColor: Colors.transparent,
-                                              builder: (_) => const FullPlayerScreen(),
-                                            );
                                           },
                                           child: Container(
                                             width: 52,
@@ -323,12 +317,6 @@ class AlbumDetailScreen extends ConsumerWidget {
                               index: index,
                               onPlay: () {
                                 ref.read(playerProvider.notifier).playQueue(detail.clips, index);
-                                showModalBottomSheet(
-                                  context: context,
-                                  isScrollControlled: true,
-                                  backgroundColor: Colors.transparent,
-                                  builder: (_) => const FullPlayerScreen(),
-                                );
                               },
                               onRename: () =>
                                   _showRenameClipDialog(context, ref, clip),
@@ -375,12 +363,6 @@ class AlbumDetailScreen extends ConsumerWidget {
   void _playAll(BuildContext context, WidgetRef ref, List<Clip> clips) {
     if (clips.isNotEmpty) {
       ref.read(playerProvider.notifier).playQueue(clips, 0);
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => const FullPlayerScreen(),
-      );
     }
   }
 

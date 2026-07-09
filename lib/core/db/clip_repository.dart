@@ -46,8 +46,9 @@ class ClipRepository {
          OR c.album_name LIKE ?
          OR c.genre LIKE ?
          OR c.source_platform LIKE ?
+         OR c.file_path LIKE ?
       ORDER BY c.created_at DESC
-    ''', ['%$query%', '%$query%', '%$query%', '%$query%', '%$query%', '%$query%']);
+    ''', ['%$query%', '%$query%', '%$query%', '%$query%', '%$query%', '%$query%', '%$query%']);
     return results.map((map) => Clip.fromMap(map)).toList();
   }
 

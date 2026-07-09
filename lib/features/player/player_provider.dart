@@ -5,7 +5,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../core/models/clip.dart';
+import '../../core/models/album.dart';
 import '../../core/db/clip_repository.dart';
+import '../albums/album_providers.dart';
 import '../../main.dart'; // import global audioHandler
 import 'audio_handler.dart'; // import ReelTuneAudioHandler
 
@@ -97,6 +99,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Timer? _sleepTimer;
   DateTime _lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
 
+  // Track natural song completion boundaries
+  String? _lastClipId;
+  Duration _lastPosition = Duration.zero;
+  Duration _lastDuration = Duration.zero;
+
   PlayerNotifier(this._ref) : super(const PlayerState()) {
     _initListeners();
   }
@@ -113,6 +120,19 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       final now = DateTime.now();
       final positionChanged = stateEvent.updatePosition != state.position;
+      
+      // Update our position tracker
+      _lastPosition = stateEvent.updatePosition;
+
+      // Natural end of the final track in queue
+      if (stateEvent.processingState == AudioProcessingState.completed) {
+        if (_lastClipId != null) {
+          _ref.read(clipRepositoryProvider).updateLastPlayed(_lastClipId!);
+          _ref.invalidate(recentClipsProvider);
+          _lastClipId = null;
+        }
+      }
+
       final shouldThrottle = positionChanged &&
           now.difference(_lastPositionUpdate).inMilliseconds < _positionThrottleMs;
 
@@ -137,10 +157,34 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
     // Listen to current media item
     _mediaItemSub = audioHandler.mediaItem.listen((item) {
-      if (!mounted || item == null) return;
+      if (!mounted) return;
 
-      // Update history in SQLite
-      _ref.read(clipRepositoryProvider).updateLastPlayed(item.id);
+      // Track transition logic: check if the previous track reached completion
+      if (item == null) {
+        if (_lastClipId != null) {
+          final finished = _lastDuration > Duration.zero &&
+              (_lastDuration - _lastPosition).inSeconds <= 2;
+          if (finished) {
+            _ref.read(clipRepositoryProvider).updateLastPlayed(_lastClipId!);
+            _ref.invalidate(recentClipsProvider);
+          }
+        }
+        _lastClipId = null;
+        _lastDuration = Duration.zero;
+      } else {
+        if (_lastClipId != null && _lastClipId != item.id) {
+          final finished = _lastDuration > Duration.zero &&
+              (_lastDuration - _lastPosition).inSeconds <= 2;
+          if (finished) {
+            _ref.read(clipRepositoryProvider).updateLastPlayed(_lastClipId!);
+            _ref.invalidate(recentClipsProvider);
+          }
+        }
+        _lastClipId = item.id;
+        _lastDuration = item.duration ?? Duration.zero;
+      }
+
+      if (item == null) return;
 
       // Extract Clip object properties back from MediaItem metadata
       final clip = Clip(
@@ -169,12 +213,26 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     final List<MediaItem> mediaItems = [];
     final List<AudioSource> sources = [];
 
+    // Preload albums to match cover image paths
+    final albums = _ref.read(albumsProvider).value ?? [];
+
     for (final clip in clips) {
+      Album? album;
+      try {
+        album = albums.firstWhere((a) => a.id == clip.albumId);
+      } catch (_) {
+        album = null;
+      }
+
       final mediaItem = MediaItem(
         id: clip.id,
         title: clip.title,
         album: clip.sourcePlatform ?? 'ReelTune',
+        artist: clip.artist ?? 'Unknown Artist',
         duration: clip.durationMs != null ? Duration(milliseconds: clip.durationMs!) : null,
+        artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
+            ? Uri.file(album.coverImagePath!)
+            : null,
         extras: {
           'albumId': clip.albumId,
           'filePath': clip.filePath,

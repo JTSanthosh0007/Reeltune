@@ -95,4 +95,19 @@ class AlbumRepository {
     final result = await db.rawQuery('SELECT COUNT(*) as count FROM albums');
     return (result.first['count'] as int?) ?? 0;
   }
+
+  Future<List<Album>> searchAlbums(String query) async {
+    final db = await _dbHelper.database;
+    final results = await db.rawQuery('''
+      SELECT a.*, COUNT(c.id) as clip_count
+      FROM albums a
+      LEFT JOIN clips c ON c.album_id = a.id
+      WHERE a.name LIKE ?
+      GROUP BY a.id
+      ORDER BY a.created_at DESC
+    ''', ['%$query%']);
+    return results.map((map) {
+      return Album.fromMap(map, clipCount: (map['clip_count'] as int?) ?? 0);
+    }).toList();
+  }
 }

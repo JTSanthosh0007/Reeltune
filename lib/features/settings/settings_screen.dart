@@ -61,6 +61,9 @@ class SettingsScreen extends ConsumerWidget {
     final qualitySetting = ref.watch(playbackQualityProvider);
     final storageSetting = ref.watch(storagePathProvider);
 
+    final importState = ref.watch(importProvider);
+    final isScanning = importState.status == ImportStatus.scanning;
+
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -238,9 +241,10 @@ class SettingsScreen extends ConsumerWidget {
                             context,
                             icon: Icons.library_music_rounded,
                             title: 'Scan Device',
-                            subtitle: 'Import local audio',
+                            subtitle: isScanning ? 'Scanning...' : 'Import local audio',
                             color: AppColors.primary,
                             onTap: () => _triggerMediaScan(context, ref),
+                            isLoading: isScanning,
                           ),
                           _buildQuickActionCard(
                             context,
@@ -635,10 +639,11 @@ class SettingsScreen extends ConsumerWidget {
     required String subtitle,
     required Color color,
     required VoidCallback onTap,
+    bool isLoading = false,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
-      onTap: onTap,
+      onTap: isLoading ? null : onTap,
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -659,7 +664,18 @@ class SettingsScreen extends ConsumerWidget {
                 color: color.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 16),
+              child: isLoading
+                  ? Center(
+                      child: SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: color,
+                        ),
+                      ),
+                    )
+                  : Icon(icon, color: color, size: 16),
             ),
             const SizedBox(height: 10),
             Text(
@@ -1181,23 +1197,8 @@ class SettingsScreen extends ConsumerWidget {
 
   // --- Media scanner scan handler ---
   Future<void> _triggerMediaScan(BuildContext context, WidgetRef ref) async {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            const SizedBox(width: 20),
-            Text('Scanning local storage...'),
-          ],
-        ),
-      ),
-    );
-
     try {
       await ref.read(importProvider.notifier).scanAndImportLocalSongs();
-      Navigator.of(context).pop(); // dismiss loading dialog
 
       final importState = ref.read(importProvider);
       if (importState.status == ImportStatus.success) {
@@ -1219,10 +1220,9 @@ class SettingsScreen extends ConsumerWidget {
         );
       }
     } catch (e) {
-      Navigator.of(context).pop(); // dismiss loading dialog
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          content: Text('Error scanning device: $e'),
           backgroundColor: AppColors.coral,
         ),
       );

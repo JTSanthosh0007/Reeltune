@@ -114,8 +114,8 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
       album = null;
     }
 
-    final coverColor = album != null && album.coverColor != null
-        ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
+    final coverColor = album != null
+        ? AppColors.parseHexColor(album.coverColor)
         : AppColors.primary;
 
     return Container(

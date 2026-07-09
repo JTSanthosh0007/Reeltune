@@ -73,3 +73,11 @@ class PlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
 final playlistClipsProvider = FutureProvider.family<List<Clip>, String>((ref, playlistId) async {
   return ref.watch(playlistRepositoryProvider).getPlaylistClips(playlistId);
 });
+
+// Search playlists provider
+final searchPlaylistsProvider = FutureProvider.family<List<Playlist>, String>((ref, query) async {
+  if (query.trim().isEmpty) return [];
+  // Re-fetch when playlists change
+  ref.watch(playlistsProvider);
+  return ref.watch(playlistRepositoryProvider).searchPlaylists(query);
+});

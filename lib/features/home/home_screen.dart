@@ -11,15 +11,18 @@ import '../albums/album_providers.dart';
 import '../albums/album_detail_screen.dart';
 import '../player/player_provider.dart';
 import '../player/full_player_screen.dart';
+import '../albums/recent_songs_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   final VoidCallback onNavigateToSearch;
   final VoidCallback onNavigateToLibrary;
+  final VoidCallback? onMenuPressed;
 
   const HomeScreen({
     super.key,
     required this.onNavigateToSearch,
     required this.onNavigateToLibrary,
+    this.onMenuPressed,
   });
 
   @override
@@ -44,7 +47,7 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.menu_rounded),
-                      onPressed: () {},
+                      onPressed: onMenuPressed,
                       color: isDark ? Colors.white : AppColors.textPrimary,
                     ),
                     Text(
@@ -214,7 +217,13 @@ class HomeScreen extends ConsumerWidget {
                           ),
                     ),
                     TextButton(
-                      onPressed: onNavigateToLibrary,
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const RecentSongsScreen(),
+                          ),
+                        );
+                      },
                       child: const Text(
                         'See All',
                         style: TextStyle(
@@ -300,9 +309,10 @@ class _HorizontalAlbumCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final coverColor = album.coverColor != null
-        ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
-        : AppColors.albumColors[index % AppColors.albumColors.length];
+    final coverColor = AppColors.parseHexColor(
+      album.coverColor,
+      fallback: AppColors.albumColors[index % AppColors.albumColors.length],
+    );
 
     return GestureDetector(
       onTap: onTap,
@@ -404,8 +414,8 @@ class _RecentClipListTile extends ConsumerWidget {
       album = null;
     }
 
-    final coverColor = album != null && album.coverColor != null
-        ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
+    final coverColor = album != null
+        ? AppColors.parseHexColor(album.coverColor)
         : AppColors.primary;
 
     final playerState = ref.watch(playerProvider);

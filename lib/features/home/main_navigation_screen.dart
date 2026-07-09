@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../albums/albums_screen.dart'; // We'll keep this as LibraryScreen or Home
+import '../albums/albums_screen.dart';
 import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
 import '../player/mini_player.dart';
@@ -14,6 +15,17 @@ import '../../core/ads/BannerAdWidget.dart';
 import '../../core/ads/InterstitialService.dart';
 import 'home_screen.dart';
 
+// Import destinations for the navigation drawer
+import '../albums/album_providers.dart';
+import '../albums/recent_songs_screen.dart';
+import '../library/favorites_screen.dart';
+import '../albums/filtered_clips_screen.dart';
+import '../settings/static_content_screen.dart';
+import '../settings/feedback_screen.dart';
+
+// --- Shared Riverpod state for global tab index ---
+final navigationIndexProvider = StateProvider<int>((ref) => 0);
+
 class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
 
@@ -22,12 +34,10 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 }
 
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
-  int _currentIndex = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   void _onTabSelected(int index) {
-    setState(() {
-      _currentIndex = index;
-    });
+    ref.read(navigationIndexProvider.notifier).state = index;
   }
 
   void _showAddClipSheet() {
@@ -43,20 +53,26 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAdFree = ref.watch(adFreeProvider);
-    final showBanner = _currentIndex != 4 && !isAdFree;
+    final currentIndex = ref.watch(navigationIndexProvider);
+    final showBanner = currentIndex != 4 && !isAdFree;
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: const _MainDrawer(),
+      // Disable default drawer swipe behavior if player is expanded (managed natively)
+      drawerEnableOpenDragGesture: true,
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.cream,
       body: Stack(
         children: [
           // Sub-screen rendering — each tab wrapped in RepaintBoundary
           IndexedStack(
-            index: _currentIndex >= 3 ? _currentIndex - 1 : _currentIndex, // Skip the placeholder at index 2
+            index: currentIndex >= 3 ? currentIndex - 1 : currentIndex, // Skip the placeholder at index 2
             children: [
               RepaintBoundary(
                 child: HomeScreen(
                   onNavigateToSearch: () => _onTabSelected(1),
-                  onNavigateToLibrary: () => _onTabSelected(2),
+                  onNavigateToLibrary: () => _onTabSelected(3),
+                  onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
                 ),
               ),
               const RepaintBoundary(child: SearchScreen(isTab: true)),
@@ -88,7 +104,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             right: 0,
             bottom: 0,
             child: _CustomBottomNavigationBar(
-              currentIndex: _currentIndex,
+              currentIndex: currentIndex,
               onTabSelected: _onTabSelected,
               onFABPressed: _showAddClipSheet,
             ),
@@ -99,6 +115,516 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   }
 }
 
+// --- Navigation Drawer Widget ---
+class _MainDrawer extends ConsumerWidget {
+  const _MainDrawer();
+
+  void _showMockRateDialog(BuildContext context) {
+    int localRating = 5;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  ? AppColors.darkCard
+                  : Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text('Rate ReelTune', style: TextStyle(fontWeight: FontWeight.bold)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('How much do you love ReelTune? Let us know!'),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(5, (index) {
+                      final starIndex = index + 1;
+                      return IconButton(
+                        icon: Icon(
+                          starIndex <= localRating ? Icons.star_rounded : Icons.star_border_rounded,
+                          color: Colors.amber,
+                          size: 32,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            localRating = starIndex;
+                          });
+                        },
+                      );
+                    }),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel', style: TextStyle(color: AppColors.textTertiary)),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Thank you for rating us $localRating stars! ⭐'),
+                        backgroundColor: AppColors.primary,
+                      ),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _shareApp(BuildContext context) {
+    Clipboard.setData(const ClipboardData(text: 'https://play.google.com/store/apps/details?id=com.reeltune.app'));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('App share link copied to clipboard! 🔗'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
+  }
+
+  Widget _buildDrawerItem(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    bool isSelected = false,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        selected: isSelected,
+        selectedTileColor: AppColors.primary.withValues(alpha: 0.12),
+        selectedColor: AppColors.primary,
+        leading: Icon(
+          icon,
+          size: 22,
+          color: isSelected
+              ? AppColors.primary
+              : (isDark ? AppColors.darkSubtitle : AppColors.textSecondary),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? AppColors.primary
+                : (isDark ? Colors.white70 : AppColors.textPrimary),
+          ),
+        ),
+        onTap: onTap,
+        dense: true,
+      ),
+    );
+  }
+
+  Widget _buildCategoryHeader(BuildContext context, String title) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 6),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          color: isDark ? AppColors.darkSubtitle.withValues(alpha: 0.5) : AppColors.textTertiary,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentIndex = ref.watch(navigationIndexProvider);
+    final selectedLibTab = ref.watch(libraryTabProvider);
+
+    // Watch Stats & Album updates
+    final statsAsync = ref.watch(settingsStatsProvider);
+    final albums = ref.watch(albumsProvider).value ?? [];
+
+    final totalSongs = statsAsync.when(
+      data: (map) => (map['downloaded'] as int? ?? 0) + (map['imported'] as int? ?? 0),
+      loading: () => 0,
+      error: (_, __) => 0,
+    );
+    final storageUsed = statsAsync.when(
+      data: (map) => map['storageUsed'] as String? ?? '0 B',
+      loading: () => '0 B',
+      error: (_, __) => '0 B',
+    );
+    final totalAlbums = albums.length;
+
+    return Drawer(
+      backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
+      child: Column(
+        children: [
+          // User Header
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [AppColors.primaryDark.withValues(alpha: 0.35), Colors.transparent]
+                    : [AppColors.green50.withValues(alpha: 0.8), Colors.transparent],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                // ReelTune Logo
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.primary, width: 2),
+                    color: Colors.white,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
+                    child: Image.asset(
+                      'assets/images/logo.jpg',
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const Icon(
+                        Icons.music_note_rounded,
+                        color: AppColors.primary,
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                // App Name & Statistics
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ReelTune',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.textPrimary,
+                            ),
+                      ),
+                      const Text(
+                        'Version 1.0.0',
+                        style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+                      ),
+                      const SizedBox(height: 6),
+                      // Stats Row
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          _buildStatChip(context, '$totalSongs Songs'),
+                          _buildStatChip(context, '$totalAlbums Albums'),
+                          _buildStatChip(context, storageUsed),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Drawer Navigation Items Scroll
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              physics: const BouncingScrollPhysics(),
+              children: [
+                _buildCategoryHeader(context, 'LIBRARY & PLAYBACK'),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.home_rounded,
+                  title: 'Home',
+                  isSelected: currentIndex == 0,
+                  onTap: () {
+                    ref.read(navigationIndexProvider.notifier).state = 0;
+                    Navigator.pop(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.search_rounded,
+                  title: 'Search',
+                  isSelected: currentIndex == 1,
+                  onTap: () {
+                    ref.read(navigationIndexProvider.notifier).state = 1;
+                    Navigator.pop(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.history_rounded,
+                  title: 'Recent Songs',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const RecentSongsScreen()),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.favorite_rounded,
+                  title: 'Favorites',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.album_rounded,
+                  title: 'Albums',
+                  isSelected: currentIndex == 3 && selectedLibTab == 0,
+                  onTap: () {
+                    ref.read(navigationIndexProvider.notifier).state = 3;
+                    ref.read(libraryTabProvider.notifier).state = 0;
+                    Navigator.pop(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.playlist_play_rounded,
+                  title: 'Playlists',
+                  isSelected: currentIndex == 3 && selectedLibTab == 1,
+                  onTap: () {
+                    ref.read(navigationIndexProvider.notifier).state = 3;
+                    ref.read(libraryTabProvider.notifier).state = 1;
+                    Navigator.pop(context);
+                  },
+                ),
+
+                _buildCategoryHeader(context, 'MUSIC CATEGORIES'),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.folder_shared_rounded,
+                  title: 'Imported Songs',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FilteredClipsScreen(
+                          title: 'Imported Songs',
+                          filter: 'imported',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.download_for_offline_rounded,
+                  title: 'Downloaded Songs',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FilteredClipsScreen(
+                          title: 'Downloaded Songs',
+                          filter: 'downloaded',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.more_time_rounded,
+                  title: 'Recently Added',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FilteredClipsScreen(
+                          title: 'Recently Added',
+                          filter: 'recently_added',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.star_rounded,
+                  title: 'Most Played',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FilteredClipsScreen(
+                          title: 'Most Played',
+                          filter: 'most_played',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.view_list_rounded,
+                  title: 'History',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const FilteredClipsScreen(
+                          title: 'History',
+                          filter: 'history',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                _buildCategoryHeader(context, 'APPLICATION'),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.settings_rounded,
+                  title: 'Settings',
+                  isSelected: currentIndex == 4,
+                  onTap: () {
+                    ref.read(navigationIndexProvider.notifier).state = 4;
+                    Navigator.pop(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.feedback_rounded,
+                  title: 'Send Feedback',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const FeedbackScreen()),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.rate_review_rounded,
+                  title: 'Rate App',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showMockRateDialog(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.share_rounded,
+                  title: 'Share App',
+                  onTap: () {
+                    Navigator.pop(context);
+                    _shareApp(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.info_rounded,
+                  title: 'About ReelTune',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const StaticContentScreen(
+                          title: 'About ReelTune',
+                          type: 'about',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.privacy_tip_rounded,
+                  title: 'Privacy Policy',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const StaticContentScreen(
+                          title: 'Privacy Policy',
+                          type: 'privacy',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.description_rounded,
+                  title: 'Terms of Service',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const StaticContentScreen(
+                          title: 'Terms of Service',
+                          type: 'terms',
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatChip(BuildContext context, String label) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.08) : AppColors.gray100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+// --- Custom Bottom Navigation Bar Item ---
 class _CustomBottomNavigationBar extends StatelessWidget {
   final int currentIndex;
   final Function(int) onTabSelected;

@@ -153,9 +153,7 @@ class _AlbumPickerSheetState extends ConsumerState<AlbumPickerSheet> {
                     else
                       ...filteredAlbums.map(
                         (album) {
-                          final coverColor = album.coverColor != null
-                              ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
-                              : AppColors.primary;
+                          final coverColor = AppColors.parseHexColor(album.coverColor);
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 6),

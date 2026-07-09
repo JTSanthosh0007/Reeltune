@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "362555910041",
+    "project_id": "reeltune-99d0a",
+    "storage_bucket": "reeltune-99d0a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:362555910041:android:c8d7c8bf95d84da6e45508",
+        "android_client_info": {
+          "package_name": "com.reeltune.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBvdbXkDj3C3Lr8SWcK6ayM9Cf93-zP6J8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

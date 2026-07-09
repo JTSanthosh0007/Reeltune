@@ -18,6 +18,7 @@ import '../../core/ads/NativeAdWidget.dart';
 import '../../core/ads/InterstitialService.dart';
 import '../library/PlaylistsProvider.dart';
 import '../library/playlist_detail_screen.dart';
+import '../library/favorites_screen.dart';
 final libraryTabProvider = StateProvider<int>((ref) => 0); // 0 = Albums, 1 = Playlists
 
 class AlbumsScreen extends ConsumerWidget {
@@ -151,6 +152,8 @@ class AlbumsScreen extends ConsumerWidget {
                             _buildTabItem(context, ref, title: 'Albums', index: 0, isSelected: selectedTab == 0),
                             const SizedBox(width: 12),
                             _buildTabItem(context, ref, title: 'Playlists', index: 1, isSelected: selectedTab == 1),
+                            const SizedBox(width: 12),
+                            _buildTabItem(context, ref, title: 'Favorites', index: 2, isSelected: false),
                           ],
                         ),
                       ),
@@ -279,7 +282,17 @@ class AlbumsScreen extends ConsumerWidget {
 
   Widget _buildTabItem(BuildContext context, WidgetRef ref, {required String title, required int index, required bool isSelected}) {
     return GestureDetector(
-      onTap: () => ref.read(libraryTabProvider.notifier).state = index,
+      onTap: () {
+        if (index == 2) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const FavoritesScreen(),
+            ),
+          );
+        } else {
+          ref.read(libraryTabProvider.notifier).state = index;
+        }
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

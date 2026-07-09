@@ -96,4 +96,16 @@ class PlaylistRepository {
     );
     return results.isNotEmpty;
   }
+
+  /// Search playlists by name.
+  Future<List<Playlist>> searchPlaylists(String query) async {
+    final db = await _dbHelper.database;
+    final results = await db.query(
+      'playlists',
+      where: 'name LIKE ?',
+      whereArgs: ['%$query%'],
+      orderBy: 'created_at DESC',
+    );
+    return results.map((map) => Playlist.fromMap(map)).toList();
+  }
 }

@@ -37,9 +37,7 @@ class AlbumDetailScreen extends ConsumerWidget {
               return const Center(child: Text('Album not found'));
             }
 
-            final coverColor = album.coverColor != null
-                ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
-                : AppColors.primary;
+            final coverColor = AppColors.parseHexColor(album.coverColor);
 
             return Stack(
               children: [
@@ -525,12 +523,7 @@ class AlbumDetailScreen extends ConsumerWidget {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: album.coverColor != null
-                          ? Color(
-                                  int.parse(album.coverColor!, radix: 16) |
-                                      0xFF000000)
-                              .withValues(alpha: 0.12)
-                          : AppColors.green50,
+                      color: AppColors.parseHexColor(album.coverColor).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(Icons.album_rounded, size: 20),

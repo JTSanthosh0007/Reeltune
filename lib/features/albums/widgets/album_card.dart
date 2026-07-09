@@ -18,9 +18,10 @@ class AlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final coverColor = album.coverColor != null
-        ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
-        : AppColors.albumColors[index % AppColors.albumColors.length];
+    final coverColor = AppColors.parseHexColor(
+      album.coverColor,
+      fallback: AppColors.albumColors[index % AppColors.albumColors.length],
+    );
 
     return GestureDetector(
       onTap: onTap,

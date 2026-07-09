@@ -14,41 +14,17 @@ import 'app.dart';
 
 late final AudioHandler audioHandler;
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Create ProviderContainer early so the app can start rendering
   final container = ProviderContainer();
 
-  // Load EnvConfig first so environment variables are available for AdMob config
-  await EnvConfig.initialize();
-
-  // Run remaining initialization concurrently
-  final results = await Future.wait<dynamic>([
-    AdManager.initialize(), // index 0
-    initAudioHandler(),     // index 1
-  ]);
-
-  audioHandler = results[1] as AudioHandler;
-
-  // Launch the app immediately — defer non-critical work to after the first frame
+  // Launch the app immediately — defer all initialization to the AppEntryPoint
   runApp(
     UncontrolledProviderScope(
       container: container,
       child: const ReelTuneApp(),
     ),
   );
-
-  // Defer ad preloading and demo data to after the first frame renders
-  WidgetsBinding.instance.addPostFrameCallback((_) async {
-    // Trigger ad service creation to start preloading logic
-    container.read(appOpenServiceProvider);
-    container.read(interstitialServiceProvider);
-    container.read(rewardedServiceProvider);
-
-    // Initialize demo data in Development/Debug Mode
-    final albumRepo = container.read(albumRepositoryProvider);
-    final clipRepo = container.read(clipRepositoryProvider);
-    await DemoDataInitializer.initialize(albumRepo, clipRepo);
-  });
 }

@@ -146,5 +146,32 @@ class RecentClipsNotifier extends AsyncNotifier<List<Clip>> {
   Future<void> toggleFavorite(String clipId, bool isFavorite) async {
     await ref.read(clipRepositoryProvider).toggleFavorite(clipId, isFavorite);
     ref.invalidateSelf();
+    ref.invalidate(favoriteClipsProvider);
   }
 }
+
+// --- Favorite clips provider ---
+final favoriteClipsProvider = AsyncNotifierProvider<FavoriteClipsNotifier, List<Clip>>(FavoriteClipsNotifier.new);
+
+class FavoriteClipsNotifier extends AsyncNotifier<List<Clip>> {
+  @override
+  Future<List<Clip>> build() async {
+    ref.watch(albumsProvider);
+    final repo = ref.watch(clipRepositoryProvider);
+    return repo.getFavoriteClips();
+  }
+
+  Future<void> toggleFavorite(String clipId, bool isFavorite) async {
+    await ref.read(clipRepositoryProvider).toggleFavorite(clipId, isFavorite);
+    ref.invalidateSelf();
+    ref.invalidate(recentClipsProvider);
+  }
+}
+
+// --- Search albums provider ---
+final searchAlbumsProvider = FutureProvider.family<List<Album>, String>((ref, query) async {
+  if (query.trim().isEmpty) return [];
+  // Re-fetch when albums list is invalidated/refreshed
+  ref.watch(albumsProvider);
+  return ref.watch(albumRepositoryProvider).searchAlbums(query);
+});

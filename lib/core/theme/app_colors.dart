@@ -147,4 +147,18 @@ class AppColors {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return isDark ? glassBorderDark : glassBorder;
   }
+
+  static Color parseHexColor(String? hexString, {Color fallback = AppColors.primary}) {
+    if (hexString == null || hexString.trim().isEmpty) return fallback;
+    try {
+      String cleanHex = hexString.replaceAll('#', '').replaceAll('0x', '').replaceAll('0X', '').trim();
+      if (cleanHex.length == 6) {
+        cleanHex = 'FF$cleanHex';
+      }
+      return Color(int.parse(cleanHex, radix: 16));
+    } catch (e) {
+      debugPrint('Error parsing color $hexString: $e');
+      return fallback;
+    }
+  }
 }

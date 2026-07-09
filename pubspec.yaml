@@ -22,7 +22,7 @@ dependencies:
   shared_preferences: ^2.3.4
 
   # Share Intent
-  receive_sharing_intent: ^1.8.1
+  receive_sharing_intent: 1.8.1
 
   # Audio Playback
   just_audio: ^0.9.42
@@ -44,6 +44,9 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_animate: ^4.5.2
   cached_network_image: ^3.4.1
+  image_picker: ^1.1.2
+  google_mobile_ads: ^9.0.0
+  on_audio_query: ^2.9.0
 
   # Icons
   cupertino_icons: ^1.0.8

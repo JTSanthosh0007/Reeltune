@@ -6,7 +6,7 @@ class AppColors {
   // ── Primary (Emerald Green) ──
   static const Color primary = Color(0xFF10B981);
   static const Color primaryDark = Color(0xFF064E3B);
-  static const Color primaryLight = Color(0xFF6EE7B7);
+  static const Color primaryLight = Color(0xFF34D399);
   static const Color primarySurface = Color(0xFFECFDF5);
 
   // ── Background ──

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../core/theme/app_colors.dart';
+import '../../../core/ads/InterstitialService.dart';
 import '../share_intent_provider.dart';
 import 'album_picker_sheet.dart';
 
@@ -101,6 +102,10 @@ class ExtractionBottomSheet extends ConsumerWidget {
               if (context.mounted) {
                 Navigator.of(context).pop();
                 ref.read(extractionFlowProvider.notifier).reset();
+                // Trigger interstitial ad after successful extraction & save
+                ref.read(interstitialServiceProvider).showInterstitialIfAllowed(
+                      onAdDismissed: () {},
+                    );
               }
             }
           },

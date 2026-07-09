@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>ReelTune requires access to your media library to scan and import local audio files.</string>
 	<key>CFBundleDisplayName</key>
 	<string>ReelTune</string>
 	<key>CFBundleExecutable</key>
@@ -62,5 +64,7 @@
 			<string>com.reeltune.app</string>
 		</dict>
 	</array>
+	<key>GADApplicationIdentifier</key>
+	<string>ca-app-pub-2811908516993554~7577319258</string>
 </dict>
 </plist>

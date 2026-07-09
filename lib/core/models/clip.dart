@@ -7,6 +7,15 @@ class Clip {
   final String? sourceUrl;
   final String? sourcePlatform;
   final int createdAt;
+  final String? artist;
+  final String? albumName;
+  final int? bitrate;
+  final int? fileSize;
+  final String? genre;
+  final int? year;
+  final int? trackNumber;
+  final bool isFavorite;
+  final int? lastPlayedAt;
 
   const Clip({
     required this.id,
@@ -17,6 +26,15 @@ class Clip {
     this.sourceUrl,
     this.sourcePlatform,
     required this.createdAt,
+    this.artist,
+    this.albumName,
+    this.bitrate,
+    this.fileSize,
+    this.genre,
+    this.year,
+    this.trackNumber,
+    this.isFavorite = false,
+    this.lastPlayedAt,
   });
 
   factory Clip.fromMap(Map<String, dynamic> map) {
@@ -29,6 +47,15 @@ class Clip {
       sourceUrl: map['source_url'] as String?,
       sourcePlatform: map['source_platform'] as String?,
       createdAt: map['created_at'] as int,
+      artist: map['artist'] as String?,
+      albumName: map['album_name'] as String?,
+      bitrate: map['bitrate'] as int?,
+      fileSize: map['file_size'] as int?,
+      genre: map['genre'] as String?,
+      year: map['year'] as int?,
+      trackNumber: map['track_number'] as int?,
+      isFavorite: (map['is_favorite'] as int? ?? 0) == 1,
+      lastPlayedAt: map['last_played_at'] as int?,
     );
   }
 
@@ -42,6 +69,15 @@ class Clip {
       'source_url': sourceUrl,
       'source_platform': sourcePlatform,
       'created_at': createdAt,
+      'artist': artist,
+      'album_name': albumName,
+      'bitrate': bitrate,
+      'file_size': fileSize,
+      'genre': genre,
+      'year': year,
+      'track_number': trackNumber,
+      'is_favorite': isFavorite ? 1 : 0,
+      'last_played_at': lastPlayedAt,
     };
   }
 
@@ -54,6 +90,15 @@ class Clip {
     String? sourceUrl,
     String? sourcePlatform,
     int? createdAt,
+    String? artist,
+    String? albumName,
+    int? bitrate,
+    int? fileSize,
+    String? genre,
+    int? year,
+    int? trackNumber,
+    bool? isFavorite,
+    int? lastPlayedAt,
   }) {
     return Clip(
       id: id ?? this.id,
@@ -64,6 +109,15 @@ class Clip {
       sourceUrl: sourceUrl ?? this.sourceUrl,
       sourcePlatform: sourcePlatform ?? this.sourcePlatform,
       createdAt: createdAt ?? this.createdAt,
+      artist: artist ?? this.artist,
+      albumName: albumName ?? this.albumName,
+      bitrate: bitrate ?? this.bitrate,
+      fileSize: fileSize ?? this.fileSize,
+      genre: genre ?? this.genre,
+      year: year ?? this.year,
+      trackNumber: trackNumber ?? this.trackNumber,
+      isFavorite: isFavorite ?? this.isFavorite,
+      lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
     );
   }
 

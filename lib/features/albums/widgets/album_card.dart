@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -86,12 +87,20 @@ class AlbumCard extends StatelessWidget {
                         border: Border.all(
                           color: coverColor.withValues(alpha: 0.3),
                         ),
+                        image: album.coverImagePath != null
+                            ? DecorationImage(
+                                image: FileImage(File(album.coverImagePath!)),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                       ),
-                      child: Icon(
-                        Icons.album_rounded,
-                        color: coverColor,
-                        size: 28,
-                      ),
+                      child: album.coverImagePath == null
+                          ? Icon(
+                              Icons.album_rounded,
+                              color: coverColor,
+                              size: 28,
+                            )
+                          : null,
                     ),
 
                     const Spacer(),

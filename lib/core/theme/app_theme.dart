@@ -27,7 +27,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.outfit(
+        titleTextStyle: GoogleFonts.poppins(
           fontSize: 22,
           fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
@@ -138,7 +138,7 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: GoogleFonts.outfit(
+        titleTextStyle: GoogleFonts.poppins(
           fontSize: 22,
           fontWeight: FontWeight.w700,
           color: Colors.white,
@@ -234,29 +234,29 @@ class AppTheme {
     final tertiaryColor = isDark ? AppColors.darkSubtitle.withValues(alpha: 0.7) : AppColors.textTertiary;
 
     return TextTheme(
-      displayLarge: GoogleFonts.outfit(
+      displayLarge: GoogleFonts.poppins(
         fontSize: 32,
         fontWeight: FontWeight.w800,
         color: primaryColor,
         letterSpacing: -0.5,
       ),
-      displayMedium: GoogleFonts.outfit(
+      displayMedium: GoogleFonts.poppins(
         fontSize: 28,
         fontWeight: FontWeight.w700,
         color: primaryColor,
         letterSpacing: -0.3,
       ),
-      headlineLarge: GoogleFonts.outfit(
+      headlineLarge: GoogleFonts.poppins(
         fontSize: 24,
         fontWeight: FontWeight.w700,
         color: primaryColor,
       ),
-      headlineMedium: GoogleFonts.outfit(
+      headlineMedium: GoogleFonts.poppins(
         fontSize: 20,
         fontWeight: FontWeight.w600,
         color: primaryColor,
       ),
-      titleLarge: GoogleFonts.outfit(
+      titleLarge: GoogleFonts.poppins(
         fontSize: 18,
         fontWeight: FontWeight.w600,
         color: primaryColor,

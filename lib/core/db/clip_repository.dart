@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/clip.dart';
 import 'database_helper.dart';
+import 'package:sqflite/sqflite.dart';
 
 final clipRepositoryProvider = Provider<ClipRepository>((ref) {
   return ClipRepository(ref.watch(databaseHelperProvider));
@@ -41,10 +42,64 @@ class ClipRepository {
       LEFT JOIN albums a ON c.album_id = a.id
       WHERE c.title LIKE ? 
          OR a.name LIKE ? 
+         OR c.artist LIKE ?
+         OR c.album_name LIKE ?
+         OR c.genre LIKE ?
          OR c.source_platform LIKE ?
       ORDER BY c.created_at DESC
-    ''', ['%$query%', '%$query%', '%$query%']);
+    ''', ['%$query%', '%$query%', '%$query%', '%$query%', '%$query%', '%$query%']);
     return results.map((map) => Clip.fromMap(map)).toList();
+  }
+
+  Future<List<Clip>> getFavoriteClips() async {
+    final db = await _dbHelper.database;
+    final results = await db.query(
+      'clips',
+      where: 'is_favorite = 1',
+      orderBy: 'created_at DESC',
+    );
+    return results.map((map) => Clip.fromMap(map)).toList();
+  }
+
+  Future<List<Clip>> getRecentlyPlayedClips({int limit = 20}) async {
+    final db = await _dbHelper.database;
+    final results = await db.query(
+      'clips',
+      where: 'last_played_at IS NOT NULL',
+      orderBy: 'last_played_at DESC',
+      limit: limit,
+    );
+    return results.map((map) => Clip.fromMap(map)).toList();
+  }
+
+  Future<void> toggleFavorite(String clipId, bool isFavorite) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'clips',
+      {'is_favorite': isFavorite ? 1 : 0},
+      where: 'id = ?',
+      whereArgs: [clipId],
+    );
+  }
+
+  Future<void> updateLastPlayed(String clipId) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'clips',
+      {'last_played_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [clipId],
+    );
+  }
+
+  Future<Clip> insertClip(Clip clip) async {
+    final db = await _dbHelper.database;
+    await db.insert(
+      'clips',
+      clip.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    return clip;
   }
 
   Future<Clip> createClip({
@@ -54,6 +109,13 @@ class ClipRepository {
     int? durationMs,
     String? sourceUrl,
     String? sourcePlatform,
+    String? artist,
+    String? albumName,
+    int? bitrate,
+    int? fileSize,
+    String? genre,
+    int? year,
+    int? trackNumber,
   }) async {
     final db = await _dbHelper.database;
 
@@ -66,6 +128,13 @@ class ClipRepository {
       sourceUrl: sourceUrl,
       sourcePlatform: sourcePlatform,
       createdAt: DateTime.now().millisecondsSinceEpoch,
+      artist: artist,
+      albumName: albumName,
+      bitrate: bitrate,
+      fileSize: fileSize,
+      genre: genre,
+      year: year,
+      trackNumber: trackNumber,
     );
 
     await db.insert('clips', clip.toMap());

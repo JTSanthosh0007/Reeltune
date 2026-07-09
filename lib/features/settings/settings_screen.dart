@@ -6,11 +6,20 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/storage/file_storage_service.dart';
+import '../../core/ads/ConsentService.dart';
+import '../../core/ads/RewardedService.dart';
+import '../../core/ads/InterstitialService.dart';
 import 'legal_dialog.dart';
 import 'theme_provider.dart';
+import '../import/ImportNotifier.dart';
 
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  final bool isTab;
+
+  const SettingsScreen({
+    super.key,
+    this.isTab = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -25,16 +34,20 @@ class SettingsScreen extends ConsumerWidget {
               // App bar
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+                  padding: EdgeInsets.fromLTRB(isTab ? 20 : 8, 20, 16, 0),
                   child: Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back_ios_rounded),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
+                      if (!isTab) ...[
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back_ios_rounded),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
                       Text(
                         'Settings',
-                        style: Theme.of(context).textTheme.headlineLarge,
+                        style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
                     ],
                   ),
@@ -56,6 +69,13 @@ class SettingsScreen extends ConsumerWidget {
                         subtitle: 'Remove temporary files',
                         onTap: () => _showClearCacheDialog(context, ref),
                       ),
+                      _SettingsTile(
+                        icon: Icons.library_music_rounded,
+                        iconColor: AppColors.primary,
+                        title: 'Scan Local Storage',
+                        subtitle: 'Scan and import device songs into library',
+                        onTap: () => _triggerMediaScan(context, ref),
+                      ),
                       _StorageInfo(),
 
                       const SizedBox(height: 24),
@@ -68,6 +88,45 @@ class SettingsScreen extends ConsumerWidget {
                         title: 'Theme Mode',
                         subtitle: _getThemeModeLabel(ref.watch(themeModeProvider)),
                         onTap: () => _showThemeSelectionDialog(context, ref),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Sponsor & Ads section
+                      _SectionHeader(title: 'Sponsor & Ads'),
+                      _SettingsTile(
+                        icon: Icons.card_giftcard_rounded,
+                        iconColor: AppColors.primary,
+                        title: ref.watch(adFreeProvider) ? 'Ad-free Active' : 'Go Ad-Free (1 Hour)',
+                        subtitle: ref.watch(adFreeProvider)
+                            ? 'Thank you for supporting ReelTune!'
+                            : 'Watch a short ad to remove all ads',
+                        onTap: ref.watch(adFreeProvider)
+                            ? null
+                            : () {
+                                ref.read(rewardedServiceProvider).showRewardedAd(
+                                      context: context,
+                                      onRewardGranted: (reward) {
+                                        ref
+                                            .read(adFreeProvider.notifier)
+                                            .setAdFreeForDuration(const Duration(hours: 1));
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Ads removed for 1 hour! Enjoy! 🎉'),
+                                            backgroundColor: AppColors.primary,
+                                          ),
+                                        );
+                                      },
+                                      onAdDismissed: () {},
+                                    );
+                              },
+                      ),
+                      _SettingsTile(
+                        icon: Icons.privacy_tip_outlined,
+                        iconColor: AppColors.skyBlue,
+                        title: 'Privacy Preferences',
+                        subtitle: 'Update GDPR & personalized ads choices',
+                        onTap: () => ref.read(adConsentProvider.notifier).showPrivacyOptionsForm(context),
                       ),
 
                       const SizedBox(height: 24),
@@ -209,6 +268,52 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _triggerMediaScan(BuildContext context, WidgetRef ref) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppColors.primary),
+            SizedBox(width: 20),
+            Text('Scanning storage...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      await ref.read(importProvider.notifier).scanAndImportLocalSongs();
+      Navigator.of(context).pop(); // dismiss loading dialog
+
+      final importState = ref.read(importProvider);
+      if (importState.status == ImportStatus.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Import complete! Found ${importState.scannedCount} songs.'),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to import: ${importState.errorMessage}'),
+            backgroundColor: AppColors.coral,
+          ),
+        );
+      }
+    } catch (e) {
+      Navigator.of(context).pop(); // dismiss loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppColors.coral,
+        ),
+      );
+    }
   }
 }
 

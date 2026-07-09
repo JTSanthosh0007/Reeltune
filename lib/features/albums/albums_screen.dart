@@ -14,12 +14,26 @@ import 'package:flutter/services.dart';
 import '../../core/network/extraction_service.dart';
 import '../share_intent/share_intent_provider.dart';
 import '../share_intent/widgets/extraction_bottom_sheet.dart';
+import '../../core/ads/NativeAdWidget.dart';
+import '../../core/ads/InterstitialService.dart';
+import '../library/PlaylistsProvider.dart';
+import '../library/playlist_detail_screen.dart';
+final libraryTabProvider = StateProvider<int>((ref) => 0); // 0 = Albums, 1 = Playlists
+
 class AlbumsScreen extends ConsumerWidget {
-  const AlbumsScreen({super.key});
+  final bool isLibrary;
+
+  const AlbumsScreen({
+    super.key,
+    this.isLibrary = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albumsAsync = ref.watch(albumsProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAdFree = ref.watch(adFreeProvider);
+    final selectedTab = ref.watch(libraryTabProvider);
 
     return Scaffold(
       body: Container(
@@ -27,171 +41,225 @@ class AlbumsScreen extends ConsumerWidget {
           gradient: AppColors.getAdaptiveBackgroundGradient(context),
         ),
         child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              // App bar
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Row(
-                    children: [
-                      // Animated logo
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.asset(
-                          'assets/images/logo.jpg',
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              gradient: AppColors.primaryGradient,
+          child: albumsAsync.when(
+            data: (albums) {
+              return CustomScrollView(
+                slivers: [
+                  if (!isLibrary) ...[
+                    // App bar
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                        child: Row(
+                          children: [
+                            // Animated logo
+                            ClipRRect(
                               borderRadius: BorderRadius.circular(12),
+                              child: Image.asset(
+                                'assets/images/logo.jpg',
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    gradient: AppColors.primaryGradient,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.music_note_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            ).animate().scale(
+                                  duration: 600.ms,
+                                  curve: Curves.elasticOut,
+                                ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'ReelTune',
+                              style: Theme.of(context).textTheme.displayMedium,
+                            ).animate().fadeIn(duration: 400.ms).slideX(
+                                  begin: -0.1,
+                                  duration: 400.ms,
+                                ),
+                            const Spacer(),
+                            // Search button
+                            _ActionButton(
+                              icon: Icons.search_rounded,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const SearchScreen(),
+                                  ),
+                                );
+                              },
                             ),
-                            child: const Icon(
-                              Icons.music_note_rounded,
-                              color: Colors.white,
-                              size: 22,
+                            const SizedBox(width: 8),
+                            // Settings button
+                            _ActionButton(
+                              icon: Icons.settings_rounded,
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => const SettingsScreen(),
+                                  ),
+                                );
+                              },
                             ),
-                          ),
+                          ],
                         ),
-                      ).animate().scale(
-                            duration: 600.ms,
-                            curve: Curves.elasticOut,
-                          ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'ReelTune',
-                        style: Theme.of(context).textTheme.displayMedium,
-                      ).animate().fadeIn(duration: 400.ms).slideX(
-                            begin: -0.1,
-                            duration: 400.ms,
-                          ),
-                      const Spacer(),
-                      // Search button
-                      _ActionButton(
-                        icon: Icons.search_rounded,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const SearchScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      // Settings button
-                      _ActionButton(
-                        icon: Icons.settings_rounded,
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const SettingsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Subtitle
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                  child: Text(
-                    'Your audio library',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ).animate().fadeIn(delay: 200.ms, duration: 400.ms),
-                ),
-              ),
-
-              const SliverToBoxAdapter(
-                child: _PasteLinkCard(),
-              ),
-
-              // Albums grid
-              albumsAsync.when(
-                data: (albums) {
-                  if (albums.isEmpty) {
-                    return SliverFillRemaining(
-                      child: _EmptyState(),
-                    );
-                  }
-                  return SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverGrid(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 0.85,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final album = albums[index];
-                          return AlbumCard(
-                            album: album,
-                            index: index,
-                            onTap: () => _navigateToAlbum(context, album),
-                          );
-                        },
-                        childCount: albums.length,
                       ),
                     ),
-                  );
-                },
-                loading: () => const SliverFillRemaining(
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-                error: (error, _) => SliverFillRemaining(
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.error_outline,
-                            color: AppColors.error, size: 48),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Failed to load albums',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: () =>
-                              ref.read(albumsProvider.notifier).refresh(),
-                          child: const Text('Retry'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
 
-              // Bottom padding for FAB
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 100),
+                    // Subtitle
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                        child: Text(
+                          'Your audio library',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ).animate().fadeIn(delay: 200.ms, duration: 400.ms),
+                      ),
+                    ),
+
+                    const SliverToBoxAdapter(
+                      child: _PasteLinkCard(),
+                    ),
+                  ] else ...[
+                    // Library Tab Header
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+                        child: Text(
+                          'Your Library',
+                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : AppColors.textPrimary,
+                              ),
+                        ),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: Row(
+                          children: [
+                            _buildTabItem(context, ref, title: 'Albums', index: 0, isSelected: selectedTab == 0),
+                            const SizedBox(width: 12),
+                            _buildTabItem(context, ref, title: 'Playlists', index: 1, isSelected: selectedTab == 1),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  if (selectedTab == 0) ...[
+                    if (albums.isEmpty)
+                      SliverFillRemaining(
+                        child: _EmptyState(),
+                      )
+                    else
+                      ..._buildAlbumSlivers(context, albums, isAdFree),
+                  ] else ...[
+                    ..._buildPlaylistSlivers(context, ref, isDark),
+                  ],
+
+                  // Bottom padding for FAB
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: 100),
+                  ),
+                ],
+              );
+            },
+            loading: () => const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+            error: (error, _) => Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.error_outline, color: AppColors.error, size: 48),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Failed to load albums',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => ref.read(albumsProvider.notifier).refresh(),
+                    child: const Text('Retry'),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showCreateAlbumDialog(context, ref),
+        onPressed: () {
+          if (selectedTab == 0) {
+            _showCreateAlbumDialog(context, ref);
+          } else {
+            _showCreatePlaylistDialog(context, ref);
+          }
+        },
         icon: const Icon(Icons.add_rounded),
-        label: const Text('New Album'),
+        label: Text(selectedTab == 0 ? 'New Album' : 'New Playlist'),
       )
           .animate()
           .scale(delay: 500.ms, duration: 400.ms, curve: Curves.elasticOut),
     );
+  }
+
+  List<Widget> _buildAlbumSlivers(BuildContext context, List<Album> albums, bool isAdFree) {
+    final List<Widget> slivers = [];
+    final int adInterval = 8;
+    
+    for (int i = 0; i < albums.length; i += adInterval) {
+      final end = (i + adInterval < albums.length) ? i + adInterval : albums.length;
+      final chunk = albums.sublist(i, end);
+      
+      slivers.add(
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              childAspectRatio: 0.85,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final album = chunk[index];
+                return AlbumCard(
+                  album: album,
+                  index: i + index,
+                  onTap: () => _navigateToAlbum(context, album),
+                );
+              },
+              childCount: chunk.length,
+            ),
+          ),
+        ),
+      );
+      
+      if (end < albums.length && !isAdFree) {
+        slivers.add(
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: NativeAdWidget(),
+            ),
+          ),
+        );
+      }
+    }
+    return slivers;
   }
 
   void _navigateToAlbum(BuildContext context, Album album) {
@@ -453,6 +521,158 @@ class _PasteLinkCardState extends ConsumerState<_PasteLinkCard> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabItem(BuildContext context, WidgetRef ref, {required String title, required int index, required bool isSelected}) {
+    return GestureDetector(
+      onTap: () => ref.read(libraryTabProvider.notifier).state = index,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected 
+              ? AppColors.primary 
+              : (Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.gray100),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected 
+                ? AppColors.primary 
+                : (Theme.of(context).brightness == Brightness.dark ? AppColors.darkBorder : AppColors.surfaceBorder),
+          ),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildPlaylistSlivers(BuildContext context, WidgetRef ref, bool isDark) {
+    final playlistsAsync = ref.watch(playlistsProvider);
+
+    return [
+      playlistsAsync.when(
+        data: (playlists) {
+          if (playlists.isEmpty) {
+            return const SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24.0),
+                  child: Text(
+                    'No playlists created yet.\nCreate a playlist by tapping "New Playlist" below.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              ),
+            );
+          }
+          return SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final playlist = playlists[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : AppColors.gray100,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      leading: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.playlist_play_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      title: Text(
+                        playlist.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.textPrimary,
+                        ),
+                      ),
+                      subtitle: Consumer(
+                        builder: (context, ref, _) {
+                          final countAsync = ref.watch(playlistClipsProvider(playlist.id));
+                          return countAsync.when(
+                            data: (clips) => Text('${clips.length} ${clips.length == 1 ? 'song' : 'songs'}', style: Theme.of(context).textTheme.bodySmall),
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
+                          );
+                        },
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlaylistDetailScreen(playlist: playlist),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+              childCount: playlists.length,
+            ),
+          );
+        },
+        loading: () => const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        ),
+        error: (err, _) => SliverFillRemaining(
+          child: Center(child: Text('Error: $err')),
+        ),
+      )
+    ];
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New Playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Playlist name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                await ref.read(playlistsProvider.notifier).createPlaylist(name);
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Create'),
           ),
         ],
       ),

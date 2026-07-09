@@ -3,6 +3,7 @@ class Album {
   final String name;
   final int createdAt;
   final String? coverColor;
+  final String? coverImagePath;
   final int clipCount;
 
   const Album({
@@ -10,6 +11,7 @@ class Album {
     required this.name,
     required this.createdAt,
     this.coverColor,
+    this.coverImagePath,
     this.clipCount = 0,
   });
 
@@ -19,6 +21,7 @@ class Album {
       name: map['name'] as String,
       createdAt: map['created_at'] as int,
       coverColor: map['cover_color'] as String?,
+      coverImagePath: map['cover_image_path'] as String?,
       clipCount: clipCount,
     );
   }
@@ -29,6 +32,7 @@ class Album {
       'name': name,
       'created_at': createdAt,
       'cover_color': coverColor,
+      'cover_image_path': coverImagePath,
     };
   }
 
@@ -37,6 +41,7 @@ class Album {
     String? name,
     int? createdAt,
     String? coverColor,
+    String? coverImagePath,
     int? clipCount,
   }) {
     return Album(
@@ -44,6 +49,7 @@ class Album {
       name: name ?? this.name,
       createdAt: createdAt ?? this.createdAt,
       coverColor: coverColor ?? this.coverColor,
+      coverImagePath: coverImagePath ?? this.coverImagePath,
       clipCount: clipCount ?? this.clipCount,
     );
   }

@@ -42,6 +42,16 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
       }
     });
 
+    // Listen to current sequence index changes to update active metadata
+    _player.currentIndexStream.listen((index) {
+      if (index != null && _player.sequence != null && index < _player.sequence!.length) {
+        final source = _player.sequence![index];
+        if (source.tag is MediaItem) {
+          mediaItem.add(source.tag as MediaItem);
+        }
+      }
+    });
+
     // Listen to processing state to handle completion
     _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
@@ -98,6 +108,20 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
         ],
       );
       _player = AudioPlayer(audioPipeline: pipeline);
+
+      // Enable the effects explicitly so Android applies them
+      _equalizer!.setEnabled(true).then((_) {
+        debugPrint('Equalizer effect pipeline enabled successfully');
+      }).catchError((err) {
+        debugPrint('Warning: Equalizer effect failed to enable: $err');
+      });
+
+      _loudnessEnhancer!.setEnabled(true).then((_) {
+        debugPrint('Loudness enhancement pipeline enabled successfully');
+      }).catchError((err) {
+        debugPrint('Warning: Loudness enhancer failed to enable: $err');
+      });
+
     } catch (e) {
       // Audio effects pipeline not supported on this platform/version, fallback gracefully
       _equalizer = null;
@@ -116,6 +140,12 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> seek(Duration position) => _player.seek(position);
+
+  @override
+  Future<void> skipToNext() => _player.seekToNext();
+
+  @override
+  Future<void> skipToPrevious() => _player.seekToPrevious();
 
   @override
   Future<void> stop() async {

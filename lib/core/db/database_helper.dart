@@ -9,7 +9,7 @@ final databaseHelperProvider = Provider<DatabaseHelper>((ref) {
 class DatabaseHelper {
   static Database? _database;
   static const String _dbName = 'reeltune.db';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 3;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -26,6 +26,7 @@ class DatabaseHelper {
       version: _dbVersion,
       onCreate: _onCreate,
       onConfigure: _onConfigure,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -34,13 +35,51 @@ class DatabaseHelper {
     await db.execute('PRAGMA foreign_keys = ON');
   }
 
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE albums ADD COLUMN cover_image_path TEXT');
+    }
+    if (oldVersion < 3) {
+      // Add new metadata columns to clips
+      await db.execute('ALTER TABLE clips ADD COLUMN artist TEXT');
+      await db.execute('ALTER TABLE clips ADD COLUMN album_name TEXT');
+      await db.execute('ALTER TABLE clips ADD COLUMN bitrate INTEGER');
+      await db.execute('ALTER TABLE clips ADD COLUMN file_size INTEGER');
+      await db.execute('ALTER TABLE clips ADD COLUMN genre TEXT');
+      await db.execute('ALTER TABLE clips ADD COLUMN year INTEGER');
+      await db.execute('ALTER TABLE clips ADD COLUMN track_number INTEGER');
+      await db.execute('ALTER TABLE clips ADD COLUMN is_favorite INTEGER DEFAULT 0');
+      await db.execute('ALTER TABLE clips ADD COLUMN last_played_at INTEGER');
+
+      // Create playlist tables
+      await db.execute('''
+        CREATE TABLE playlists (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE playlist_clips (
+          playlist_id TEXT NOT NULL,
+          clip_id TEXT NOT NULL,
+          PRIMARY KEY (playlist_id, clip_id),
+          FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+          FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE
+        )
+      ''');
+    }
+  }
+
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE albums (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        cover_color TEXT
+        cover_color TEXT,
+        cover_image_path TEXT
       )
     ''');
 
@@ -54,6 +93,15 @@ class DatabaseHelper {
         source_url TEXT,
         source_platform TEXT,
         created_at INTEGER NOT NULL,
+        artist TEXT,
+        album_name TEXT,
+        bitrate INTEGER,
+        file_size INTEGER,
+        genre TEXT,
+        year INTEGER,
+        track_number INTEGER,
+        is_favorite INTEGER DEFAULT 0,
+        last_played_at INTEGER,
         FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE
       )
     ''');
@@ -67,6 +115,25 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX idx_clips_title ON clips(title COLLATE NOCASE)',
     );
+
+    // Create playlist tables
+    await db.execute('''
+      CREATE TABLE playlists (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE playlist_clips (
+        playlist_id TEXT NOT NULL,
+        clip_id TEXT NOT NULL,
+        PRIMARY KEY (playlist_id, clip_id),
+        FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
+        FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE
+      )
+    ''');
   }
 
   Future<void> close() async {

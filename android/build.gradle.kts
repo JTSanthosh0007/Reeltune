@@ -16,6 +16,27 @@ subprojects {
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
 subprojects {
+    afterEvaluate {
+        val android = extensions.findByName("android")
+        if (android != null) {
+            val hasNamespace = try {
+                android.javaClass.getMethod("getNamespace").invoke(android) != null
+            } catch (e: Exception) {
+                false
+            }
+            if (!hasNamespace) {
+                try {
+                    val pkg = (project.group.toString() + "." + project.name)
+                        .replace(Regex("[^a-zA-Z0-9.]"), ".")
+                        .toLowerCase()
+                    android.javaClass.getMethod("setNamespace", String::class.java).invoke(android, pkg)
+                } catch (e: Exception) {}
+            }
+        }
+    }
+}
+
+subprojects {
     project.evaluationDependsOn(":app")
 }
 

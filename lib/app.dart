@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'features/onboarding/onboarding_provider.dart';
 import 'features/onboarding/onboarding_screen.dart';
-import 'features/albums/albums_screen.dart';
+import 'features/home/main_navigation_screen.dart';
 import 'features/share_intent/share_intent_handler.dart';
 
 import 'features/settings/theme_provider.dart';
@@ -53,14 +53,14 @@ class _AppEntryPointState extends ConsumerState<_AppEntryPoint> {
         if (!complete) {
           return const OnboardingScreen();
         }
-        return const AlbumsScreen();
+        return const MainNavigationScreen();
       },
       loading: () => const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
         ),
       ),
-      error: (_, __) => const AlbumsScreen(),
+      error: (_, __) => const MainNavigationScreen(),
     );
   }
 }

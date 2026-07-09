@@ -8,18 +8,20 @@ class ClipListTile extends StatelessWidget {
   final Clip clip;
   final int index;
   final VoidCallback onPlay;
-  final VoidCallback onRename;
+  final VoidCallback? onRename;
   final VoidCallback onDelete;
-  final VoidCallback onMove;
+  final VoidCallback? onMove;
+  final VoidCallback? onAddToPlaylist;
 
   const ClipListTile({
     super.key,
     required this.clip,
     required this.index,
     required this.onPlay,
-    required this.onRename,
+    this.onRename,
     required this.onDelete,
-    required this.onMove,
+    this.onMove,
+    this.onAddToPlaylist,
   });
 
   @override
@@ -115,10 +117,13 @@ class ClipListTile extends StatelessWidget {
                 onSelected: (value) {
                   switch (value) {
                     case 'rename':
-                      onRename();
+                      onRename?.call();
                       break;
                     case 'move':
-                      onMove();
+                      onMove?.call();
+                      break;
+                    case 'playlist':
+                      onAddToPlaylist?.call();
                       break;
                     case 'delete':
                       onDelete();
@@ -126,26 +131,39 @@ class ClipListTile extends StatelessWidget {
                   }
                 },
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'rename',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Rename'),
-                      ],
+                  if (onRename != null)
+                    const PopupMenuItem(
+                      value: 'rename',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text('Rename'),
+                        ],
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'move',
-                    child: Row(
-                      children: [
-                        Icon(Icons.drive_file_move_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Move to Album'),
-                      ],
+                  if (onMove != null)
+                    const PopupMenuItem(
+                      value: 'move',
+                      child: Row(
+                        children: [
+                          Icon(Icons.drive_file_move_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text('Move to Album'),
+                        ],
+                      ),
                     ),
-                  ),
+                  if (onAddToPlaylist != null)
+                    const PopupMenuItem(
+                      value: 'playlist',
+                      child: Row(
+                        children: [
+                          Icon(Icons.playlist_add_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text('Add to Playlist'),
+                        ],
+                      ),
+                    ),
                   const PopupMenuItem(
                     value: 'delete',
                     child: Row(

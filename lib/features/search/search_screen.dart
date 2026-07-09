@@ -9,6 +9,10 @@ import '../../core/db/clip_repository.dart';
 import '../../core/models/clip.dart';
 import '../player/player_provider.dart';
 import '../player/mini_player.dart';
+import '../player/full_player_screen.dart';
+
+import '../../core/ads/NativeAdWidget.dart';
+import '../../core/ads/InterstitialService.dart';
 
 // --- Search provider ---
 final searchQueryProvider = StateProvider<String>((ref) => '');
@@ -20,7 +24,12 @@ final searchResultsProvider = FutureProvider<List<Clip>>((ref) async {
 });
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  final bool isTab;
+
+  const SearchScreen({
+    super.key,
+    this.isTab = false,
+  });
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -64,10 +73,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                     child: Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_rounded),
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
+                        if (!widget.isTab)
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_ios_rounded),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
                         Expanded(
                           child: TextField(
                             controller: _controller,
@@ -144,19 +154,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                 );
                               }
 
+                              final isAdFree = ref.watch(adFreeProvider);
+                              final int adInterval = 8;
+                              final int adCount = isAdFree ? 0 : clips.length ~/ adInterval;
+                              final int totalCount = clips.length + adCount;
+
                               return ListView.builder(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 16, vertical: 8),
-                                itemCount: clips.length,
+                                itemCount: totalCount,
                                 itemBuilder: (context, index) {
-                                  final clip = clips[index];
+                                  if (!isAdFree && (index + 1) % (adInterval + 1) == 0) {
+                                    return const NativeAdWidget();
+                                  }
+                                  final adOffset = isAdFree ? 0 : index ~/ (adInterval + 1);
+                                  final clipIndex = index - adOffset;
+                                  final clip = clips[clipIndex];
                                   return _SearchResultTile(
                                     clip: clip,
-                                    index: index,
+                                    index: clipIndex,
                                     onTap: () {
                                       ref
                                           .read(playerProvider.notifier)
                                           .playClip(clip);
+                                      showModalBottomSheet(
+                                        context: context,
+                                        isScrollControlled: true,
+                                        backgroundColor: Colors.transparent,
+                                        builder: (_) => const FullPlayerScreen(),
+                                      );
                                     },
                                   );
                                 },
@@ -243,7 +269,9 @@ class _SearchResultTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${clip.platformIcon} ${clip.formattedDuration}',
+                    clip.artist != null && clip.artist!.isNotEmpty && clip.artist != 'Unknown Artist'
+                        ? '${clip.artist} • ${clip.platformIcon} ${clip.formattedDuration}'
+                        : '${clip.platformIcon} ${clip.formattedDuration}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],

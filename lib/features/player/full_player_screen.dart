@@ -1,131 +1,110 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../albums/album_providers.dart';
 import 'player_provider.dart';
 
-class FullPlayerScreen extends ConsumerWidget {
+class FullPlayerScreen extends ConsumerStatefulWidget {
   const FullPlayerScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<FullPlayerScreen> createState() => _FullPlayerScreenState();
+}
+
+class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with SingleTickerProviderStateMixin {
+  late final AnimationController _rotationController;
+  bool _isFavorited = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 15),
+    );
+  }
+
+  @override
+  void dispose() {
+    _rotationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
     final clip = playerState.currentClip;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (clip == null) {
       return const SizedBox.shrink();
     }
 
+    // Play or stop rotation animation depending on player status
+    if (playerState.isPlaying && !_rotationController.isAnimating) {
+      _rotationController.repeat();
+    } else if (!playerState.isPlaying && _rotationController.isAnimating) {
+      _rotationController.stop();
+    }
+
+    // Get current album details for cover image resolution
+    final albums = ref.watch(albumsProvider).value ?? [];
+    final album = albums.firstWhere((a) => a.id == clip.albumId, orElse: () => null as dynamic);
+
+    final coverColor = album != null && album.coverColor != null
+        ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
+        : AppColors.primary;
+
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: MediaQuery.of(context).size.height * 0.9,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.primary.withValues(alpha: 0.15),
-            Theme.of(context).scaffoldBackgroundColor,
-            Theme.of(context).scaffoldBackgroundColor,
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        color: isDark ? AppColors.darkBackground : AppColors.cream,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         border: Border(
-          top: BorderSide(color: AppColors.getAdaptiveSurfaceBorder(context)),
-          left: BorderSide(color: AppColors.getAdaptiveSurfaceBorder(context)),
-          right: BorderSide(color: AppColors.getAdaptiveSurfaceBorder(context)),
+          top: BorderSide(
+            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+            width: 1.5,
+          ),
         ),
       ),
       child: Column(
         children: [
-          // Handle bar
+          // 1. Drag handle bar
           Container(
-            width: 40,
-            height: 4,
+            width: 44,
+            height: 4.5,
             margin: const EdgeInsets.only(top: 12),
             decoration: BoxDecoration(
-              color: AppColors.textTertiary,
-              borderRadius: BorderRadius.circular(2),
+              color: isDark ? AppColors.darkBorder : AppColors.textTertiary,
+              borderRadius: BorderRadius.circular(2.5),
             ),
           ),
 
-          const SizedBox(height: 32),
-
-          // Album art placeholder
-          Container(
-            width: 200,
-            height: 200,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primary.withValues(alpha: 0.3),
-                  AppColors.skyBlue.withValues(alpha: 0.2),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: 0.3),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.15),
-                  blurRadius: 40,
-                  spreadRadius: 10,
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.music_note_rounded,
-              color: AppColors.primaryLight,
-              size: 80,
-            ),
-          )
-              .animate(
-                onPlay: (controller) => controller.repeat(reverse: true),
-              )
-              .scale(
-                begin: const Offset(1, 1),
-                end: const Offset(1.03, 1.03),
-                duration: 3000.ms,
-                curve: Curves.easeInOut,
-              ),
-
-          const SizedBox(height: 24),
-
-          // Title
+          // 2. Custom App Bar / Header
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              clip.title,
-              style: Theme.of(context).textTheme.headlineMedium,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          // Platform badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.glassBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.glassBorder),
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(clip.platformIcon, style: const TextStyle(fontSize: 14)),
-                const SizedBox(width: 6),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30),
+                  onPressed: () => Navigator.of(context).pop(),
+                  color: isDark ? Colors.white : AppColors.textPrimary,
+                ),
                 Text(
-                  clip.sourcePlatform ?? 'Local',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.textSecondary,
+                  'Now Playing',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : AppColors.textPrimary,
                       ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.more_vert_rounded),
+                  onPressed: () {},
+                  color: isDark ? Colors.white : AppColors.textPrimary,
                 ),
               ],
             ),
@@ -133,45 +112,185 @@ class FullPlayerScreen extends ConsumerWidget {
 
           const Spacer(),
 
-          // Seek bar
+          // 3. Spinning Vinyl Record Design
+          Center(
+            child: AnimatedBuilder(
+              animation: _rotationController,
+              builder: (context, child) {
+                return Transform.rotate(
+                  angle: _rotationController.value * 2 * 3.14159,
+                  child: child,
+                );
+              },
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Outer Vinyl Disc
+                  Container(
+                    width: 260,
+                    height: 260,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark ? const Color(0xFF0F1210) : Colors.grey[850],
+                      boxShadow: [
+                        BoxShadow(
+                          color: coverColor.withValues(alpha: 0.15),
+                          blurRadius: 40,
+                          spreadRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Concentric grooves
+                  ...List.generate(6, (index) {
+                    final size = 260.0 - (index * 25.0);
+                    return Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.04),
+                          width: 1,
+                        ),
+                      ),
+                    );
+                  }),
+                  // Center Album Cover
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: coverColor.withValues(alpha: 0.2),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkBackground : Colors.white,
+                        width: 4,
+                      ),
+                      image: album != null && album.coverImagePath != null
+                          ? DecorationImage(
+                              image: FileImage(File(album.coverImagePath!)),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: album == null || album.coverImagePath == null
+                        ? Icon(
+                            Icons.music_note_rounded,
+                            color: coverColor,
+                            size: 40,
+                          )
+                        : null,
+                  ),
+                  // Center Spindle Hole
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark ? AppColors.darkBackground : Colors.white,
+                      border: Border.all(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // 4. Song Details (Title + Album + Favorite)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        clip.title,
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.textPrimary,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        album?.name ?? 'Single Clip',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                            ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _isFavorited = !_isFavorited;
+                    });
+                  },
+                  icon: Icon(
+                    _isFavorited ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: _isFavorited ? AppColors.primary : (isDark ? Colors.white70 : AppColors.textSecondary),
+                    size: 28,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // 5. Seek Bar / Progress Bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: [
                 SliderTheme(
                   data: SliderTheme.of(context).copyWith(
-                    trackHeight: 4,
-                    thumbShape: const RoundSliderThumbShape(
-                      enabledThumbRadius: 7,
-                    ),
-                    overlayShape: const RoundSliderOverlayShape(
-                      overlayRadius: 16,
-                    ),
+                    trackHeight: 3,
+                    activeTrackColor: AppColors.primary,
+                    inactiveTrackColor: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                    thumbColor: AppColors.primary,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    overlayColor: AppColors.primary.withValues(alpha: 0.15),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                   ),
                   child: Slider(
                     value: playerState.progress.clamp(0.0, 1.0),
                     onChanged: (value) {
                       final position = Duration(
-                        milliseconds:
-                            (value * playerState.duration.inMilliseconds)
-                                .round(),
+                        milliseconds: (value * playerState.duration.inMilliseconds).round(),
                       );
                       ref.read(playerProvider.notifier).seek(position);
                     },
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         _formatDuration(playerState.position),
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                            ),
                       ),
                       Text(
                         _formatDuration(playerState.duration),
-                        style: Theme.of(context).textTheme.bodySmall,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                            ),
                       ),
                     ],
                   ),
@@ -180,165 +299,143 @@ class FullPlayerScreen extends ConsumerWidget {
             ),
           ),
 
-          // Quick Adjustments Row
+          const SizedBox(height: 16),
+
+          // 6. Playback controls
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                // Speed Selector
-                TextButton.icon(
-                  onPressed: () => _showSpeedMenu(context, ref, playerState.speed),
-                  icon: const Icon(Icons.speed_rounded, size: 18),
-                  label: Text('${playerState.speed.toStringAsFixed(1)}x'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    visualDensity: VisualDensity.compact,
+                // Shuffle
+                IconButton(
+                  onPressed: () {
+                    ref.read(playerProvider.notifier).toggleShuffle();
+                  },
+                  icon: Icon(
+                    Icons.shuffle_rounded,
+                    color: playerState.isShuffleEnabled ? AppColors.primary : AppColors.textTertiary,
+                    size: 24,
                   ),
                 ),
-                // Sleep Timer
-                TextButton.icon(
-                  onPressed: () => _showSleepTimerMenu(context, ref, playerState.sleepTimerRemaining),
+
+                // Skip Previous
+                IconButton(
+                  onPressed: () {
+                    ref.read(playerProvider.notifier).skipToPrevious();
+                  },
                   icon: Icon(
-                    Icons.timer_outlined,
-                    size: 18,
-                    color: playerState.sleepTimerRemaining != null ? AppColors.primary : AppColors.textTertiary,
+                    Icons.skip_previous_rounded,
+                    color: isDark ? Colors.white : AppColors.textPrimary,
+                    size: 36,
                   ),
-                  label: Text(
-                    playerState.sleepTimerRemaining != null
-                        ? _formatSleepTimer(playerState.sleepTimerRemaining!)
-                        : 'Sleep',
-                    style: TextStyle(
-                      color: playerState.sleepTimerRemaining != null ? AppColors.primary : AppColors.textSecondary,
+                ),
+
+                // Play / Pause Circle
+                GestureDetector(
+                  onTap: () {
+                    ref.read(playerProvider.notifier).togglePlayPause();
+                  },
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          blurRadius: 18,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: Center(
+                      child: playerState.isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : Icon(
+                              playerState.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 40,
+                            ),
                     ),
                   ),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                ),
+
+                // Skip Next
+                IconButton(
+                  onPressed: () {
+                    ref.read(playerProvider.notifier).skipToNext();
+                  },
+                  icon: Icon(
+                    Icons.skip_next_rounded,
+                    color: isDark ? Colors.white : AppColors.textPrimary,
+                    size: 36,
                   ),
                 ),
-                // Audio Enhancements Dialog Trigger
+
+                // Repeat
                 IconButton(
-                  onPressed: () => _showEnhancementsMenu(context, ref, playerState),
-                  icon: const Icon(Icons.tune_rounded, size: 20),
-                  color: AppColors.primary,
-                  style: IconButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    ref.read(playerProvider.notifier).toggleLoop();
+                  },
+                  icon: Icon(
+                    Icons.repeat_rounded,
+                    color: playerState.isLooping ? AppColors.primary : AppColors.textTertiary,
+                    size: 24,
                   ),
                 ),
               ],
             ),
           ),
 
-          const SizedBox(height: 8),
+          const Spacer(),
 
-          // Controls
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Loop
-              IconButton(
-                onPressed: () {
-                  ref.read(playerProvider.notifier).toggleLoop();
-                },
-                icon: Icon(
-                  Icons.repeat_rounded,
-                  color: playerState.isLooping
-                      ? AppColors.primary
-                      : AppColors.textTertiary,
-                  size: 24,
+          // 7. Footer controls (Equalizer/Waves, Share/Download, Playlist)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 32, left: 24, right: 24),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                // Equalizer / Audio Enhancements Dialog
+                IconButton(
+                  icon: const Icon(Icons.tune_rounded),
+                  color: isDark ? Colors.white70 : AppColors.textSecondary,
+                  onPressed: () => _showEnhancementsMenu(context, ref, playerState),
                 ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // Rewind 10s
-              IconButton(
-                onPressed: () {
-                  ref
-                      .read(playerProvider.notifier)
-                      .seekRelative(const Duration(seconds: -10));
-                },
-                icon: const Icon(
-                  Icons.replay_10_rounded,
-                  color: AppColors.textPrimary,
-                  size: 32,
-                ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // Play/Pause (large)
-              GestureDetector(
-                onTap: () {
-                  ref.read(playerProvider.notifier).togglePlayPause();
-                },
-                child: Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.4),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+                // Sleep Timer
+                IconButton(
+                  icon: Icon(
+                    Icons.timer_outlined,
+                    color: playerState.sleepTimerRemaining != null
+                        ? AppColors.primary
+                        : (isDark ? Colors.white70 : AppColors.textSecondary),
                   ),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    child: playerState.isLoading
-                        ? const CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 3,
-                          )
-                        : Icon(
-                            playerState.isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.white,
-                            size: 36,
-                            key: ValueKey(playerState.isPlaying),
-                          ),
+                  onPressed: () => _showSleepTimerMenu(context, ref, playerState.sleepTimerRemaining),
+                ),
+                // Play Speed
+                TextButton(
+                  onPressed: () => _showSpeedMenu(context, ref, playerState.speed),
+                  style: TextButton.styleFrom(
+                    foregroundColor: isDark ? Colors.white70 : AppColors.textSecondary,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(40, 40),
+                  ),
+                  child: Text(
+                    '${playerState.speed.toStringAsFixed(1)}x',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                 ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // Forward 10s
-              IconButton(
-                onPressed: () {
-                  ref
-                      .read(playerProvider.notifier)
-                      .seekRelative(const Duration(seconds: 10));
-                },
-                icon: const Icon(
-                  Icons.forward_10_rounded,
-                  color: AppColors.textPrimary,
-                  size: 32,
-                ),
-              ),
-
-              const SizedBox(width: 16),
-
-              // Stop
-              IconButton(
-                onPressed: () {
-                  ref.read(playerProvider.notifier).stop();
-                  Navigator.of(context).pop();
-                },
-                icon: const Icon(
-                  Icons.stop_rounded,
-                  color: AppColors.textTertiary,
-                  size: 24,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-
-          const SizedBox(height: 48),
         ],
       ),
     );

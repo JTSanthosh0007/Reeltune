@@ -49,7 +49,7 @@ class AlbumRepository {
     );
   }
 
-  Future<Album> createAlbum(String name, {String? coverColor}) async {
+  Future<Album> createAlbum(String name, {String? coverColor, String? coverImagePath}) async {
     final db = await _dbHelper.database;
 
     final album = Album(
@@ -57,6 +57,7 @@ class AlbumRepository {
       name: name,
       createdAt: DateTime.now().millisecondsSinceEpoch,
       coverColor: coverColor,
+      coverImagePath: coverImagePath,
     );
 
     await db.insert('albums', album.toMap());

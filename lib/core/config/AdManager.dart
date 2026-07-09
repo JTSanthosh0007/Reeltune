@@ -8,6 +8,12 @@ import 'BuildConfig.dart';
 class AdManager {
   AdManager._();
 
+  static String get bannerAdUnitId => AdMobConfig.bannerAdUnitId;
+  static String get interstitialAdUnitId => AdMobConfig.interstitialAdUnitId;
+  static String get rewardedAdUnitId => AdMobConfig.rewardedAdUnitId;
+  static String get appOpenAdUnitId => AdMobConfig.appOpenAdUnitId;
+  static String get nativeAdUnitId => AdMobConfig.nativeAdUnitId;
+
   static bool _initialized = false;
   static int _interstitialRetryAttempts = 0;
   static int _rewardedRetryAttempts = 0;
@@ -174,7 +180,7 @@ class AdManager {
     await AppOpenAd.load(
       adUnitId: adUnitId,
       request: const AdRequest(),
-      appOpenAdLoadCallback: AppOpenAdLoadCallback(
+      adLoadCallback: AppOpenAdLoadCallback(
         onAdLoaded: (ad) {
           debugPrint('[AdManager] App Open Loaded Successfully.');
           _appOpenAd = ad;
@@ -223,7 +229,7 @@ class AdManager {
     return true;
   }
 
-  static Future<bool> showRewarded(BuildContext context, {required OnUserEarnedRewardListener onUserEarnedReward}) async {
+  static Future<bool> showRewarded(BuildContext context, {required void Function(AdWithoutView, RewardItem) onUserEarnedReward}) async {
     if (_rewardedAd == null) {
       debugPrint('[AdManager] Rewarded ad not ready. Triggering load and returning false.');
       preloadRewarded();

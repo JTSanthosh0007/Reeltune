@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/models/album.dart';
 import '../albums/album_providers.dart';
 import 'player_provider.dart';
 
@@ -40,7 +41,52 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (clip == null) {
-      return const SizedBox.shrink();
+      // Show a styled loading placeholder instead of a blank white screen
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.9,
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkBackground : AppColors.cream,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 44,
+              height: 4.5,
+              margin: const EdgeInsets.only(top: 12),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkBorder : AppColors.textTertiary,
+                borderRadius: BorderRadius.circular(2.5),
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.music_note_rounded,
+              size: 80,
+              color: AppColors.primary.withValues(alpha: 0.3),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Loading...',
+              style: TextStyle(
+                color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 2.5,
+              ),
+            ),
+            const Spacer(),
+          ],
+        ),
+      );
     }
 
     // Play or stop rotation animation depending on player status
@@ -50,9 +96,14 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
       _rotationController.stop();
     }
 
-    // Get current album details for cover image resolution
+    // Get current album details for cover image resolution — safely nullable
     final albums = ref.watch(albumsProvider).value ?? [];
-    final album = albums.firstWhere((a) => a.id == clip.albumId, orElse: () => null as dynamic);
+    Album? album;
+    try {
+      album = albums.firstWhere((a) => a.id == clip.albumId);
+    } catch (_) {
+      album = null;
+    }
 
     final coverColor = album != null && album.coverColor != null
         ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
@@ -167,20 +218,9 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
                         color: isDark ? AppColors.darkBackground : Colors.white,
                         width: 4,
                       ),
-                      image: album != null && album.coverImagePath != null
-                          ? DecorationImage(
-                              image: FileImage(File(album.coverImagePath!)),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
                     ),
-                    child: album == null || album.coverImagePath == null
-                        ? Icon(
-                            Icons.music_note_rounded,
-                            color: coverColor,
-                            size: 40,
-                          )
-                        : null,
+                    clipBehavior: Clip.antiAlias,
+                    child: _buildArtwork(album, coverColor),
                   ),
                   // Center Spindle Hole
                   Container(
@@ -438,6 +478,32 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
           ),
         ],
       ),
+    );
+  }
+
+  /// Builds the album artwork with proper error handling and fallback
+  Widget _buildArtwork(Album? album, Color coverColor) {
+    if (album != null && album.coverImagePath != null) {
+      final file = File(album.coverImagePath!);
+      if (file.existsSync()) {
+        return Image(
+          image: FileImage(file),
+          fit: BoxFit.cover,
+          width: 100,
+          height: 100,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => Icon(
+            Icons.music_note_rounded,
+            color: coverColor,
+            size: 40,
+          ),
+        );
+      }
+    }
+    return Icon(
+      Icons.music_note_rounded,
+      color: coverColor,
+      size: 40,
     );
   }
 

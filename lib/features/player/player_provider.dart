@@ -9,6 +9,9 @@ import '../../core/db/clip_repository.dart';
 import '../../main.dart'; // import global audioHandler
 import 'audio_handler.dart'; // import ReelTuneAudioHandler
 
+// Position update throttle interval
+const _positionThrottleMs = 500;
+
 // --- Player state ---
 class PlayerState {
   final Clip? currentClip;
@@ -92,6 +95,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   StreamSubscription<PlaybackState>? _playbackStateSub;
   StreamSubscription<MediaItem?>? _mediaItemSub;
   Timer? _sleepTimer;
+  DateTime _lastPositionUpdate = DateTime.fromMillisecondsSinceEpoch(0);
 
   PlayerNotifier(this._ref) : super(const PlayerState()) {
     _initListeners();
@@ -100,12 +104,26 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   ReelTuneAudioHandler get _handler => audioHandler as ReelTuneAudioHandler;
 
   void _initListeners() {
-    // Listen to playback state from audio_service
+    // Listen to playback state from audio_service — throttle position updates
     _playbackStateSub = audioHandler.playbackState.listen((stateEvent) {
       if (!mounted) return;
 
       final isLoading = stateEvent.processingState == AudioProcessingState.loading ||
           stateEvent.processingState == AudioProcessingState.buffering;
+
+      final now = DateTime.now();
+      final positionChanged = stateEvent.updatePosition != state.position;
+      final shouldThrottle = positionChanged &&
+          now.difference(_lastPositionUpdate).inMilliseconds < _positionThrottleMs;
+
+      // Always update play/loading state immediately, but throttle pure position-only updates
+      if (shouldThrottle &&
+          stateEvent.playing == state.isPlaying &&
+          isLoading == state.isLoading) {
+        return;
+      }
+
+      if (positionChanged) _lastPositionUpdate = now;
 
       state = state.copyWith(
         isPlaying: stateEvent.playing,
@@ -127,9 +145,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       // Extract Clip object properties back from MediaItem metadata
       final clip = Clip(
         id: item.id,
-        albumId: '', // Detail not needed here
+        albumId: item.extras?['albumId'] as String? ?? '',
         title: item.title,
-        filePath: '', // File path handled by backend
+        filePath: item.extras?['filePath'] as String? ?? '',
         durationMs: item.duration?.inMilliseconds,
         sourcePlatform: item.album,
         createdAt: 0,
@@ -157,6 +175,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         title: clip.title,
         album: clip.sourcePlatform ?? 'ReelTune',
         duration: clip.durationMs != null ? Duration(milliseconds: clip.durationMs!) : null,
+        extras: {
+          'albumId': clip.albumId,
+          'filePath': clip.filePath,
+        },
       );
       mediaItems.add(mediaItem);
       sources.add(AudioSource.file(clip.filePath, tag: mediaItem));

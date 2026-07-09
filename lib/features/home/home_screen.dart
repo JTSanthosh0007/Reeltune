@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/models/album.dart';
 import '../../core/models/clip.dart';
+import '../../shared/widgets/cached_artwork_image.dart';
 import '../albums/album_providers.dart';
 import '../albums/album_detail_screen.dart';
 import '../player/player_provider.dart';
@@ -317,18 +318,11 @@ class _HorizontalAlbumCard extends StatelessWidget {
               width: 140,
               height: 140,
               decoration: BoxDecoration(
-                color: coverColor.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
                   color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
                   width: 1.5,
                 ),
-                image: album.coverImagePath != null
-                    ? DecorationImage(
-                        image: FileImage(File(album.coverImagePath!)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
                 boxShadow: [
                   BoxShadow(
                     color: coverColor.withValues(alpha: 0.12),
@@ -337,13 +331,14 @@ class _HorizontalAlbumCard extends StatelessWidget {
                   ),
                 ],
               ),
-              child: album.coverImagePath == null
-                  ? Icon(
-                      Icons.album_rounded,
-                      color: coverColor,
-                      size: 48,
-                    )
-                  : null,
+              child: CachedArtworkImage(
+                imagePath: album.coverImagePath,
+                size: 140,
+                borderRadius: BorderRadius.circular(18),
+                fallbackColor: coverColor,
+                fallbackIcon: Icons.album_rounded,
+                fallbackIconSize: 48,
+              ),
             ),
             const SizedBox(height: 8),
             // Title
@@ -386,7 +381,12 @@ class _RecentClipListTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final albums = ref.watch(albumsProvider).value ?? [];
-    final album = albums.firstWhere((a) => a.id == clip.albumId, orElse: () => null as dynamic);
+    Album? album;
+    try {
+      album = albums.firstWhere((a) => a.id == clip.albumId);
+    } catch (_) {
+      album = null;
+    }
 
     final coverColor = album != null && album.coverColor != null
         ? Color(int.parse(album.coverColor!, radix: 16) | 0xFF000000)
@@ -407,27 +407,14 @@ class _RecentClipListTile extends ConsumerWidget {
           ),
           child: Row(
             children: [
-              // Left thumbnail (from album cover or placeholder)
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: coverColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  image: album != null && album.coverImagePath != null
-                      ? DecorationImage(
-                          image: FileImage(File(album.coverImagePath!)),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                ),
-                child: album == null || album.coverImagePath == null
-                    ? Icon(
-                        Icons.music_note_rounded,
-                        color: coverColor,
-                        size: 24,
-                      )
-                    : null,
+              // Left thumbnail (from album cover or placeholder) using CachedArtworkImage
+              CachedArtworkImage(
+                imagePath: album?.coverImagePath,
+                size: 52,
+                borderRadius: BorderRadius.circular(12),
+                fallbackColor: coverColor,
+                fallbackIcon: Icons.music_note_rounded,
+                fallbackIconSize: 24,
               ),
 
               const SizedBox(width: 14),

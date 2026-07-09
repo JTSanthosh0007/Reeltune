@@ -12,6 +12,7 @@ import '../player/player_provider.dart';
 import '../player/mini_player.dart';
 import '../player/full_player_screen.dart';
 import 'album_providers.dart';
+import '../../shared/widgets/cached_artwork_image.dart';
 import 'widgets/clip_list_tile.dart';
 import '../library/PlaylistsProvider.dart';
 
@@ -134,18 +135,11 @@ class AlbumDetailScreen extends ConsumerWidget {
                                           width: 180,
                                           height: 180,
                                           decoration: BoxDecoration(
-                                            color: coverColor.withValues(alpha: 0.12),
                                             borderRadius: BorderRadius.circular(24),
                                             border: Border.all(
                                               color: coverColor.withValues(alpha: 0.25),
                                               width: 2,
                                             ),
-                                            image: album.coverImagePath != null
-                                                ? DecorationImage(
-                                                    image: FileImage(File(album.coverImagePath!)),
-                                                    fit: BoxFit.cover,
-                                                  )
-                                                : null,
                                             boxShadow: [
                                               BoxShadow(
                                                 color: coverColor.withValues(alpha: 0.15),
@@ -154,13 +148,14 @@ class AlbumDetailScreen extends ConsumerWidget {
                                               ),
                                             ],
                                           ),
-                                          child: album.coverImagePath == null
-                                              ? Icon(
-                                                  Icons.album_rounded,
-                                                  color: coverColor,
-                                                  size: 80,
-                                                )
-                                              : null,
+                                          child: CachedArtworkImage(
+                                            imagePath: album.coverImagePath,
+                                            size: 180,
+                                            borderRadius: BorderRadius.circular(22),
+                                            fallbackColor: coverColor,
+                                            fallbackIcon: Icons.album_rounded,
+                                            fallbackIconSize: 80,
+                                          ),
                                         ).animate().scale(
                                               duration: 500.ms,
                                               curve: Curves.elasticOut,

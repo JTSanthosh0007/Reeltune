@@ -283,7 +283,7 @@ class _SearchResultTile extends StatelessWidget {
     )
         .animate()
         .fadeIn(
-          delay: Duration(milliseconds: 50 * index),
+          delay: Duration(milliseconds: 50 * (index > 8 ? 8 : index)),
           duration: 300.ms,
         )
         .slideX(begin: 0.03, duration: 300.ms);

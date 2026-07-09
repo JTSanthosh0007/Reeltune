@@ -45,27 +45,23 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final isAdFree = ref.watch(adFreeProvider);
     final showBanner = _currentIndex != 4 && !isAdFree;
 
-    // List of screens for navigation
-    final List<Widget> screens = [
-      HomeScreen(onNavigateToSearch: () => _onTabSelected(1), onNavigateToLibrary: () => _onTabSelected(2)),
-      const SearchScreen(isTab: true),
-      const SizedBox.shrink(), // Center button spacer
-      const AlbumsScreen(isLibrary: true),
-      const SettingsScreen(isTab: true),
-    ];
-
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBackground : AppColors.cream,
       body: Stack(
         children: [
-          // Sub-screen rendering
+          // Sub-screen rendering — each tab wrapped in RepaintBoundary
           IndexedStack(
-            index: _currentIndex == 2 ? 0 : _currentIndex, // Avoid indexing the placeholder
+            index: _currentIndex >= 3 ? _currentIndex - 1 : _currentIndex, // Skip the placeholder at index 2
             children: [
-              screens[0],
-              screens[1],
-              screens[3],
-              screens[4],
+              RepaintBoundary(
+                child: HomeScreen(
+                  onNavigateToSearch: () => _onTabSelected(1),
+                  onNavigateToLibrary: () => _onTabSelected(2),
+                ),
+              ),
+              const RepaintBoundary(child: SearchScreen(isTab: true)),
+              const RepaintBoundary(child: AlbumsScreen(isLibrary: true)),
+              const RepaintBoundary(child: SettingsScreen(isTab: true)),
             ],
           ),
 

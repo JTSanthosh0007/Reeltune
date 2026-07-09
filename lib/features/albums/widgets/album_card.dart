@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-
 import '../../../core/theme/app_colors.dart';
 import '../../../core/models/album.dart';
+import '../../../shared/widgets/cached_artwork_image.dart';
 
 class AlbumCard extends StatelessWidget {
   final Album album;
@@ -78,29 +76,13 @@ class AlbumCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Album icon
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: coverColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: coverColor.withValues(alpha: 0.3),
-                        ),
-                        image: album.coverImagePath != null
-                            ? DecorationImage(
-                                image: FileImage(File(album.coverImagePath!)),
-                                fit: BoxFit.cover,
-                              )
-                            : null,
-                      ),
-                      child: album.coverImagePath == null
-                          ? Icon(
-                              Icons.album_rounded,
-                              color: coverColor,
-                              size: 28,
-                            )
-                          : null,
+                    CachedArtworkImage(
+                      imagePath: album.coverImagePath,
+                      size: 52,
+                      borderRadius: BorderRadius.circular(16),
+                      fallbackColor: coverColor,
+                      fallbackIcon: Icons.album_rounded,
+                      fallbackIconSize: 28,
                     ),
 
                     const Spacer(),

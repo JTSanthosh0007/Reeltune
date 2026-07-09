@@ -276,6 +276,158 @@ class AlbumsScreen extends ConsumerWidget {
       builder: (context) => const CreateAlbumDialog(),
     );
   }
+
+  Widget _buildTabItem(BuildContext context, WidgetRef ref, {required String title, required int index, required bool isSelected}) {
+    return GestureDetector(
+      onTap: () => ref.read(libraryTabProvider.notifier).state = index,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected 
+              ? AppColors.primary 
+              : (Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.gray100),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected 
+                ? AppColors.primary 
+                : (Theme.of(context).brightness == Brightness.dark ? AppColors.darkBorder : AppColors.surfaceBorder),
+          ),
+        ),
+        child: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+            fontWeight: FontWeight.bold,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildPlaylistSlivers(BuildContext context, WidgetRef ref, bool isDark) {
+    final playlistsAsync = ref.watch(playlistsProvider);
+
+    return [
+      playlistsAsync.when(
+        data: (playlists) {
+          if (playlists.isEmpty) {
+            return const SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24.0),
+                  child: Text(
+                    'No playlists created yet.\nCreate a playlist by tapping "New Playlist" below.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+              ),
+            );
+          }
+          return SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final playlist = playlists[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkCard : AppColors.gray100,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                      leading: Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.playlist_play_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
+                      ),
+                      title: Text(
+                        playlist.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : AppColors.textPrimary,
+                        ),
+                      ),
+                      subtitle: Consumer(
+                        builder: (context, ref, _) {
+                          final countAsync = ref.watch(playlistClipsProvider(playlist.id));
+                          return countAsync.when(
+                            data: (clips) => Text('${clips.length} ${clips.length == 1 ? 'song' : 'songs'}', style: Theme.of(context).textTheme.bodySmall),
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
+                          );
+                        },
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlaylistDetailScreen(playlist: playlist),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+              childCount: playlists.length,
+            ),
+          );
+        },
+        loading: () => const SliverFillRemaining(
+          child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        ),
+        error: (err, _) => SliverFillRemaining(
+          child: Center(child: Text('Error: $err')),
+        ),
+      )
+    ];
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New Playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'Playlist name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                await ref.read(playlistsProvider.notifier).createPlaylist(name);
+                Navigator.of(context).pop();
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ActionButton extends StatelessWidget {
@@ -526,156 +678,3 @@ class _PasteLinkCardState extends ConsumerState<_PasteLinkCard> {
       ),
     );
   }
-
-  Widget _buildTabItem(BuildContext context, WidgetRef ref, {required String title, required int index, required bool isSelected}) {
-    return GestureDetector(
-      onTap: () => ref.read(libraryTabProvider.notifier).state = index,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected 
-              ? AppColors.primary 
-              : (Theme.of(context).brightness == Brightness.dark ? AppColors.darkCard : AppColors.gray100),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected 
-                ? AppColors.primary 
-                : (Theme.of(context).brightness == Brightness.dark ? AppColors.darkBorder : AppColors.surfaceBorder),
-          ),
-        ),
-        child: Text(
-          title,
-          style: TextStyle(
-            color: isSelected ? Colors.white : AppColors.textSecondary,
-            fontWeight: FontWeight.bold,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildPlaylistSlivers(BuildContext context, WidgetRef ref, bool isDark) {
-    final playlistsAsync = ref.watch(playlistsProvider);
-
-    return [
-      playlistsAsync.when(
-        data: (playlists) {
-          if (playlists.isEmpty) {
-            return const SliverFillRemaining(
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24.0),
-                  child: Text(
-                    'No playlists created yet.\nCreate a playlist by tapping "New Playlist" below.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                ),
-              ),
-            );
-          }
-          return SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final playlist = playlists[index];
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkCard : AppColors.gray100,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-                      ),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      leading: Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.playlist_play_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                      ),
-                      title: Text(
-                        playlist.name,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : AppColors.textPrimary,
-                        ),
-                      ),
-                      subtitle: Consumer(
-                        builder: (context, ref, _) {
-                          final countAsync = ref.watch(playlistClipsProvider(playlist.id));
-                          return countAsync.when(
-                            data: (clips) => Text('${clips.length} ${clips.length == 1 ? 'song' : 'songs'}', style: Theme.of(context).textTheme.bodySmall),
-                            loading: () => const SizedBox.shrink(),
-                            error: (_, __) => const SizedBox.shrink(),
-                          );
-                        },
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textTertiary),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PlaylistDetailScreen(playlist: playlist),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                );
-              },
-              childCount: playlists.length,
-            ),
-          );
-        },
-        loading: () => const SliverFillRemaining(
-          child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-        ),
-        error: (err, _) => SliverFillRemaining(
-          child: Center(child: Text('Error: $err')),
-        ),
-      )
-    ];
-  }
-
-  void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New Playlist'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Playlist name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                await ref.read(playlistsProvider.notifier).createPlaylist(name);
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-  }
-}

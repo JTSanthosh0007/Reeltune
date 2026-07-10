@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -9,6 +8,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import '../../core/network/extraction_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../queue/queue_provider.dart';
+import 'share_overlay_bridge.dart';
 
 final shareIntentHandlerProvider =
     StateNotifierProvider<ShareIntentHandler, ShareIntentState>((ref) {
@@ -17,7 +17,6 @@ final shareIntentHandlerProvider =
 
 class ShareIntentState {
   final bool initialized;
-
   const ShareIntentState({this.initialized = false});
 }
 
@@ -25,6 +24,7 @@ class ShareIntentHandler extends StateNotifier<ShareIntentState> {
   final Ref _ref;
   StreamSubscription? _intentSub;
   static final _localNotifications = FlutterLocalNotificationsPlugin();
+  static const _sharingChannel = MethodChannel("com.reeltune.app/sharing");
 
   ShareIntentHandler(this._ref) : super(const ShareIntentState()) {
     const initSettings = InitializationSettings(
@@ -37,18 +37,34 @@ class ShareIntentHandler extends StateNotifier<ShareIntentState> {
     if (state.initialized) return;
     state = const ShareIntentState(initialized: true);
 
-    // Handle intent when app is already running
+    // Setup native MethodChannel listener for direct Kotlin intent callback
+    _sharingChannel.setMethodCallHandler((call) async {
+      if (call.method == "onSharedTextReceived") {
+        final text = call.arguments as String?;
+        if (text != null) {
+          _handleSharedText(text);
+        }
+      }
+    });
+
+    // Fetch any pending intent text from native launch
+    _sharingChannel.invokeMethod<String?>("getSharedText").then((text) {
+      if (text != null) {
+        _handleSharedText(text);
+      }
+    });
+
+    // Backup plugin subscriptions
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen(
       (List<SharedMediaFile> files) {
-        _handleSharedFiles(context, files, false);
+        _handleSharedFiles(files);
       },
     );
 
-    // Handle intent when app is launched via share
     ReceiveSharingIntent.instance.getInitialMedia().then(
       (List<SharedMediaFile> files) {
         if (files.isNotEmpty) {
-          _handleSharedFiles(context, files, true);
+          _handleSharedFiles(files);
           ReceiveSharingIntent.instance.reset();
         }
       },
@@ -74,48 +90,50 @@ class ShareIntentHandler extends StateNotifier<ShareIntentState> {
     await _localNotifications.show(
       999,
       'Saved to ReelTune Queue 🎵',
-      'You can continue watching, extraction will be saved.',
+      'Extraction and downloads started in background.',
       details,
     );
   }
 
-  void _handleSharedFiles(BuildContext context, List<SharedMediaFile> files, bool isInitial) {
+  void _handleSharedFiles(List<SharedMediaFile> files) {
     if (files.isEmpty) return;
-
     for (final file in files) {
-      String? url;
-      if (file.type == SharedMediaType.url ||
-          file.type == SharedMediaType.text) {
-        url = _extractUrl(file.path);
-      }
-
-      if (url != null) {
-        final platform = ExtractionService.detectPlatform(url);
-        
-        // Quietly add to download queue in background
-        _ref.read(queueProvider.notifier).addToQueue(
-              url: url,
-              platform: platform,
-            );
-
-        if (isInitial) {
-          _showSavedNotification().then((_) {
-            SystemNavigator.pop();
-          });
-        } else {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Saved to ReelTune Queue 🎵'),
-                backgroundColor: AppColors.primary,
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
+      if (file.type == SharedMediaType.url || file.type == SharedMediaType.text) {
+        final url = _extractUrl(file.path);
+        if (url != null) {
+          _handleSharedText(url);
+          break;
         }
-        break; // Handle first valid URL
       }
     }
+  }
+
+  Future<void> _handleSharedText(String text) async {
+    final url = _extractUrl(text);
+    if (url == null) return;
+
+    final platform = ExtractionService.detectPlatform(url);
+    final queue = _ref.read(queueProvider.notifier);
+    
+    // Add to downloader queue
+    await queue.addToQueue(
+      url: url,
+      platform: platform,
+    );
+
+    // Compute active badge count (pending + downloading)
+    final pendingCount = _ref.read(queueProvider).where((i) => i.status == 'pending' || i.status == 'downloading').length;
+
+    // Direct backgrounding & native overlay triggering
+    final hasPermission = await ShareOverlayBridge.checkOverlayPermission();
+    if (hasPermission) {
+      await ShareOverlayBridge.showBubble(badgeCount: pendingCount > 0 ? pendingCount : 1);
+    } else {
+      await _showSavedNotification();
+    }
+
+    // Instantly return the user to original application (Instagram/YT)
+    await ShareOverlayBridge.minimizeToBackground();
   }
 
   @override

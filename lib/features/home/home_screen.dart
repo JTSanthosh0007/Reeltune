@@ -13,8 +13,9 @@ import '../player/player_provider.dart';
 import '../player/full_player_screen.dart';
 import '../albums/recent_songs_screen.dart';
 import '../notifications/notification_center_screen.dart';
+import '../share_intent/share_overlay_bridge.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback onNavigateToQueue;
   final VoidCallback onNavigateToLibrary;
   final VoidCallback? onMenuPressed;
@@ -27,7 +28,43 @@ class HomeScreen extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
+  bool _hasOverlayPermission = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _checkPermission();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermission();
+    }
+  }
+
+  Future<void> _checkPermission() async {
+    final granted = await ShareOverlayBridge.checkOverlayPermission();
+    if (mounted) {
+      setState(() {
+        _hasOverlayPermission = granted;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final albumsAsync = ref.watch(albumsProvider);
     final recentClipsAsync = ref.watch(recentClipsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -48,7 +85,7 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.menu_rounded),
-                      onPressed: onMenuPressed,
+                      onPressed: widget.onMenuPressed,
                       color: isDark ? Colors.white : AppColors.textPrimary,
                     ),
                     Text(
@@ -101,9 +138,77 @@ class HomeScreen extends ConsumerWidget {
 
               const SizedBox(height: 20),
 
+              // Overlay Permission Card
+              if (!_hasOverlayPermission)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF14B8A6), Color(0xFF0F766E)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF14B8A6).withValues(alpha: 0.3),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.layers_outlined, color: Colors.white, size: 24),
+                              SizedBox(width: 10),
+                              Text(
+                                'Enable Floating Queue Badge',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Allow ReelTune to display a small floating overlay so you can track download queues instantly without leaving Instagram or YouTube.',
+                            style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.3),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: () async {
+                                  await ShareOverlayBridge.requestOverlayPermission();
+                                },
+                                style: TextButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: const Color(0xFF0F766E),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                ),
+                                child: const Text('Enable Now', style: TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
               // 3. Queue Bar Mockup (Triggers tab change)
               GestureDetector(
-                onTap: onNavigateToQueue,
+                onTap: widget.onNavigateToQueue,
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -157,7 +262,7 @@ class HomeScreen extends ConsumerWidget {
                           ),
                     ),
                     TextButton(
-                      onPressed: onNavigateToLibrary,
+                      onPressed: widget.onNavigateToLibrary,
                       child: const Text(
                         'See All',
                         style: TextStyle(

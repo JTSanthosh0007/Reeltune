@@ -11,6 +11,7 @@ import '../../core/network/extraction_service.dart';
 import '../../core/storage/file_storage_service.dart';
 import '../library/PlaylistRepository.dart';
 import '../library/PlaylistsProvider.dart';
+import '../share_intent/share_overlay_bridge.dart';
 
 final queueProvider = StateNotifierProvider<QueueNotifier, List<QueueItem>>((ref) {
   final repository = ref.watch(queueRepositoryProvider);
@@ -69,7 +70,21 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
       return item;
     }).toList();
     state = resetItems;
+    _syncNativeOverlayBadge();
     _processNext();
+  }
+
+  void _syncNativeOverlayBadge() {
+    try {
+      final pendingCount = state.where((item) => item.status == 'pending' || item.status == 'downloading').length;
+      if (pendingCount > 0) {
+        ShareOverlayBridge.updateBubbleBadge(pendingCount);
+      } else {
+        ShareOverlayBridge.dismissBubble();
+      }
+    } catch (e) {
+      debugPrint('[Queue] Error syncing native overlay badge: $e');
+    }
   }
 
   Future<void> addToQueue({
@@ -115,6 +130,7 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
 
     await _repository.insertQueueItem(item);
     state = [item, ...state];
+    _syncNativeOverlayBadge();
     _processNext();
   }
 
@@ -149,6 +165,7 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
       state.firstWhere((i) => i.id == id).retries,
       error: error,
     );
+    _syncNativeOverlayBadge();
   }
 
   void _updateItemStateMetrics(
@@ -178,10 +195,15 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
       status,
       progress,
       speed,
-      eta,
+      decayEta(eta),
       retries,
       error: error,
     );
+    _syncNativeOverlayBadge();
+  }
+
+  int decayEta(int rawEta) {
+    return rawEta < 0 ? 0 : rawEta;
   }
 
   void _updateItemProgressMetrics(String id, double progress, double speed, int eta) {
@@ -227,12 +249,12 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
     _activeJobs.remove(id);
     await _repository.deleteQueueItem(id);
     state = state.where((item) => item.id != id).toList();
+    _syncNativeOverlayBadge();
     _processNext();
   }
 
   Future<void> retryDownload(String id) async {
     // Reset retries to 0 on manual retry request
-    final item = state.firstWhere((i) => i.id == id);
     _updateItemStateMetrics(id, 'pending', 0.0, 0.0, 0, 0);
     _processNext();
   }
@@ -240,6 +262,7 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
   Future<void> clearCompleted() async {
     await _repository.clearCompleted();
     state = state.where((item) => item.status != 'completed').toList();
+    _syncNativeOverlayBadge();
   }
 
   Future<void> downloadAll() async {
@@ -257,6 +280,7 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
       }
       return item;
     }).toList();
+    _syncNativeOverlayBadge();
     _processNext();
   }
 
@@ -266,6 +290,7 @@ class QueueNotifier extends StateNotifier<List<QueueItem>> {
         pauseDownload(item.id);
       }
     }
+    _syncNativeOverlayBadge();
   }
 
   Future<void> updatePriority(String id, int priority) async {

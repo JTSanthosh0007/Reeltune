@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const ffmpeg = require('fluent-ffmpeg');
 const { uploadFile } = require('./s3Service');
+const https = require('https');
 
 // Configure ffmpeg path if provided
 if (process.env.FFMPEG_PATH) {
@@ -35,14 +36,28 @@ async function extractAudio(url, jobId, quality = 'high') {
   fs.mkdirSync(tempDir, { recursive: true });
 
   try {
-    // Step 1: Get video info + download with yt-dlp
-    console.log(`[Extractor] Downloading video from: ${url}`);
+    let title = 'Audio Clip';
+    let s3Key = '';
 
-    const { title, downloadedPath } = await downloadWithYtDlp(url, videoPath);
-
-    // Step 2: Extract audio with ffmpeg
-    console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadedPath}`);
-    await extractWithFfmpeg(downloadedPath, audioPath, quality);
+    try {
+      // Step 1: Get video info + download with yt-dlp
+      console.log(`[Extractor] Downloading video from: ${url}`);
+      const downloadResult = await downloadWithYtDlp(url, videoPath);
+      title = downloadResult.title || title;
+      
+      // Step 2: Extract audio with ffmpeg
+      console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadResult.downloadedPath}`);
+      await extractWithFfmpeg(downloadResult.downloadedPath, audioPath, quality);
+      
+    } catch (err) {
+      if (err.message.includes('requires sign-in') || err.message.includes('bot challenge')) {
+        console.warn(`[Extractor] yt-dlp blocked by YouTube. Falling back to Cobalt API...`);
+        // Fallback to Cobalt API
+        title = await downloadWithCobalt(url, audioPath);
+      } else {
+        throw err;
+      }
+    }
 
     // Step 3: Upload to S3
     console.log(`[Extractor] Uploading to S3...`);
@@ -196,6 +211,65 @@ function extractWithFfmpeg(inputPath, outputPath, quality) {
         }
       })
       .run();
+  });
+}
+
+/**
+ * Fallback to Cobalt API for downloading audio
+ */
+async function downloadWithCobalt(url, outputPath) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({
+      url: url,
+      isAudioOnly: true,
+      aFormat: 'mp3'
+    });
+
+    const req = https.request('https://api.cobalt.tools/api/json', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'ReelTune-App',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.status === 'error') {
+            return reject(new Error('Cobalt API error: ' + json.text));
+          }
+          
+          const downloadUrl = json.url;
+          if (!downloadUrl) {
+            return reject(new Error('Cobalt API did not return a download URL'));
+          }
+
+          console.log(`[Cobalt] Downloading from: ${downloadUrl}`);
+          const fileStream = fs.createWriteStream(outputPath);
+          
+          https.get(downloadUrl, (downloadRes) => {
+            downloadRes.pipe(fileStream);
+            fileStream.on('finish', () => {
+              fileStream.close();
+              resolve('Audio Clip'); // Title is not easily retrieved from Cobalt without separate call
+            });
+          }).on('error', (err) => {
+            fs.unlinkSync(outputPath);
+            reject(new Error('Failed to download from Cobalt: ' + err.message));
+          });
+        } catch (e) {
+          reject(new Error('Failed to parse Cobalt response: ' + data));
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(new Error('Cobalt API request failed: ' + err.message)));
+    req.write(postData);
+    req.end();
   });
 }
 

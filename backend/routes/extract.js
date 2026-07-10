@@ -135,62 +135,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
       return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Missing or invalid URL' });
     }
 
-    if (url.includes('spotify.com')) {
-      const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
-      if (!match) {
-        return res.status(400).json({ success: false, error_code: 'INVALID_SPOTIFY_URL', message: 'Invalid Spotify playlist URL' });
-      }
-      const playlistId = match[1];
-      const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
-
-      const response = await fetch(embedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        }
-      });
-
-      if (!response.ok) {
-        return res.status(500).json({ success: false, error_code: 'SPOTIFY_FETCH_ERROR', message: 'Failed to fetch Spotify embed page' });
-      }
-
-      const html = await response.text();
-      const scriptMatch = html.match(/<script id="resource" type="application\/json">([\s\S]*?)<\/script>/) ||
-                          html.match(/<script id="initial-state" type="text\/plain">([\s\S]*?)<\/script>/);
-
-      if (!scriptMatch) {
-        return res.status(500).json({
-          success: false,
-          error_code: 'SPOTIFY_PARSE_ERROR',
-          message: 'Spotify playlist embedding format changed or private',
-          details: 'We could not extract the metadata. Please ensure the playlist is public.'
-        });
-      }
-
-      let rawJson = scriptMatch[1];
-      if (html.includes('id="initial-state"')) {
-        rawJson = Buffer.from(rawJson, 'base64').toString('utf8');
-      }
-
-      const parsed = JSON.parse(rawJson);
-      const playlistData = parsed.resource || parsed;
-      
-      const tracks = (playlistData.tracks?.items || playlistData.tracks || []).map((item) => {
-        const track = item.track || item;
-        return {
-          title: track.name || 'Unknown Title',
-          artist: (track.artists || []).map(a => a.name).join(', ') || 'Unknown Artist',
-          url: `https://www.youtube.com/results?search_query=${encodeURIComponent((track.name || '') + ' ' + (track.artists?.[0]?.name || ''))}`,
-          durationMs: track.duration_ms || 180000,
-        };
-      });
-
-      return res.json({
-        title: playlistData.name || 'Spotify Playlist',
-        description: playlistData.description || '',
-        coverUrl: playlistData.images?.[0]?.url || playlistData.coverArtwork?.sources?.[0]?.url || '',
-        tracks,
-      });
-    } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    if (url.includes('spotify.com') || url.includes('youtube.com') || url.includes('youtu.be')) {
       const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
       const { execFile } = require('child_process');
       
@@ -207,27 +152,32 @@ const handlePlaylistMetadata = async (req, res, next) => {
 
       execFile(YTDLP_BIN, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000 }, (err, stdout, stderr) => {
         if (err) {
-          console.error(`[Playlist] YouTube error:`, stderr || err.message);
-          return res.status(500).json({ success: false, error_code: 'YOUTUBE_FETCH_ERROR', message: 'Failed to fetch YouTube playlist metadata' });
+          console.error(`[Playlist] Error parsing playlist:`, stderr || err.message);
+          return res.status(500).json({ success: false, error_code: 'PLAYLIST_FETCH_ERROR', message: 'Failed to fetch playlist metadata' });
         }
 
         try {
           const data = JSON.parse(stdout);
-          const tracks = (data.entries || []).map((entry) => ({
-            title: entry.title || 'Unknown Video',
-            artist: entry.uploader || data.title || 'YouTube Creator',
-            url: `https://www.youtube.com/watch?v=${entry.id}`,
-            durationMs: (entry.duration || 0) * 1000,
-          }));
+          const tracks = (data.entries || []).map((entry) => {
+            const title = entry.title || entry.track || 'Unknown Video';
+            const artist = entry.uploader || entry.artist || data.title || 'Unknown Artist';
+            const trackUrl = entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`;
+            return {
+              title,
+              artist,
+              url: trackUrl,
+              durationMs: (entry.duration || 0) * 1000,
+            };
+          });
 
           return res.json({
-            title: data.title || 'YouTube Playlist',
+            title: data.title || 'Playlist',
             description: data.description || '',
             coverUrl: data.thumbnails?.[0]?.url || '',
             tracks,
           });
         } catch (parseErr) {
-          return res.status(500).json({ success: false, error_code: 'YOUTUBE_PARSE_ERROR', message: 'Failed to parse YouTube playlist JSON' });
+          return res.status(500).json({ success: false, error_code: 'PLAYLIST_PARSE_ERROR', message: 'Failed to parse playlist JSON' });
         }
       });
     } else if (url.includes('music.apple.com')) {

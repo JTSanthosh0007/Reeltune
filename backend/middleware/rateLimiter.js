@@ -25,8 +25,9 @@ const deviceRateLimiter = rateLimit({
     const bodyDeviceId = req.body?.deviceId;
     // Or from header (GET requests)
     const headerDeviceId = req.headers['x-device-id'];
-    // Fall back to IP
-    return bodyDeviceId || headerDeviceId || req.ip;
+    // Fall back to actual client IP (Cloudflare passes this)
+    const clientIp = req.headers['cf-connecting-ip'] || req.headers['true-client-ip'] || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip;
+    return bodyDeviceId || headerDeviceId || clientIp;
   },
 
   // Custom response when rate limited
@@ -43,12 +44,11 @@ const deviceRateLimiter = rateLimit({
     });
   },
 
-  // Skip rate limiting for status checks and health endpoints
   skip: (req) => {
     return (
-      req.path.startsWith('/api/status/') ||
-      req.path.startsWith('/api/confirm/') ||
-      req.path === '/health'
+      req.originalUrl.startsWith('/api/status/') ||
+      req.originalUrl.startsWith('/api/confirm/') ||
+      req.originalUrl === '/health'
     );
   },
 });

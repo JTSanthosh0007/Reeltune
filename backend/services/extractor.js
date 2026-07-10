@@ -106,21 +106,25 @@ function downloadWithYtDlp(url, outputPath) {
 
       execFile(YTDLP_BIN, downloadArgs, { timeout: 120000 }, (err, stdout, stderr) => {
         if (err) {
-          const errOutput = stderr || err.message;
+          const errOutput = stderr || err.message || '';
           console.error(`[yt-dlp] Error:`, errOutput);
           
+          if (err.code === 'ENOENT') {
+            return reject(new Error('yt-dlp or python is not installed or not found in system path. Please configure YTDLP_PATH.'));
+          }
+
           // Map descriptive error messages for common yt-dlp issues
-          if (errOutput.includes('Private video') || errOutput.includes('requires login') || errOutput.includes('login_required')) {
-            return reject(new Error('Instagram/TikTok blocked request: Private video or login required'));
+          if (errOutput.includes('Private video') || errOutput.includes('requires login') || errOutput.includes('login_required') || errOutput.includes('PrivateAccount')) {
+            return reject(new Error('Instagram blocked request: Private account or login required.'));
           } else if (errOutput.includes('429') || errOutput.includes('Too Many Requests')) {
             return reject(new Error('Rate limited by platform. Please try again later.'));
-          } else if (errOutput.includes('Video unavailable') || errOutput.includes('not found')) {
-            return reject(new Error('Video unavailable or has been deleted.'));
-          } else if (errOutput.includes('Unsupported URL') || errOutput.includes('URL is invalid')) {
-            return reject(new Error('Invalid URL format or platform not supported.'));
+          } else if (errOutput.includes('Video unavailable') || errOutput.includes('not found') || errOutput.includes('unavailable')) {
+            return reject(new Error('Video unavailable (private, deleted, or blocked).'));
+          } else if (errOutput.includes('Unsupported URL') || errOutput.includes('URL is invalid') || errOutput.includes('not supported')) {
+            return reject(new Error('Unsupported or invalid Reel URL.'));
           }
           
-          return reject(new Error(`Download failed: ${err.message}`));
+          return reject(new Error(`Download failed: ${errOutput}`));
         }
 
         // Find the downloaded file (extension may vary)
@@ -174,7 +178,11 @@ function extractWithFfmpeg(inputPath, outputPath, quality) {
       })
       .on('error', (err) => {
         console.error(`[ffmpeg] Error:`, err.message);
-        reject(new Error(`Audio extraction failed: ${err.message}`));
+        if (err.message.includes('Cannot find ffmpeg') || err.message.includes('FFmpeg/FFprobe not found')) {
+          reject(new Error('FFmpeg is not installed or not found in system path. Please configure FFMPEG_PATH.'));
+        } else {
+          reject(new Error(`FFmpeg audio extraction failed: ${err.message}`));
+        }
       })
       .run();
   });

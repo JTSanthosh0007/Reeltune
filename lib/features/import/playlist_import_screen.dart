@@ -12,6 +12,7 @@ import '../../core/models/clip.dart';
 import '../../core/models/playlist.dart';
 import '../library/PlaylistsProvider.dart';
 import '../notifications/notifications_provider.dart';
+import '../../core/storage/file_storage_service.dart';
 
 class PlaylistImportScreen extends ConsumerStatefulWidget {
   const PlaylistImportScreen({super.key});
@@ -44,6 +45,24 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
   Future<void> _fetchMetadata() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
+
+    final lowerUrl = url.toLowerCase();
+    final isSupported = lowerUrl.contains('spotify.com') ||
+                        lowerUrl.contains('youtube.com') ||
+                        lowerUrl.contains('youtu.be') ||
+                        lowerUrl.contains('apple.com') ||
+                        lowerUrl.contains('jiosaavn') ||
+                        lowerUrl.endsWith('.m3u') ||
+                        lowerUrl.endsWith('.m3u8') ||
+                        lowerUrl.contains('/m3u');
+
+    if (!isSupported) {
+      setState(() {
+        _error = 'Unsupported playlist URL.';
+        _isLoading = false;
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -80,8 +99,14 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
         _downloadProgress[i] = 0.0;
       }
     } catch (e) {
+      String errMsg = 'Failed to fetch playlist metadata: $e';
+      if (e is ApiException) {
+        errMsg = e.message;
+      } else if (e is DioException) {
+        errMsg = e.message ?? 'Network error';
+      }
       setState(() {
-        _error = 'Failed to fetch playlist metadata: $e';
+        _error = errMsg;
         _isLoading = false;
       });
     }
@@ -162,13 +187,16 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
       }
 
       // 3. Download actual MP3 file
-      final dio = Dio();
-      final appDir = await getApplicationDocumentsDirectory();
-      final localFilePath = '${appDir.path}/clips/${jobId}.mp3';
+      final fileService = ref.read(fileStorageServiceProvider);
+      final localFilePath = await fileService.getClipFilePath('imported_playlist_songs', jobId);
       
-      // Ensure clips folder exists
-      await Directory('${appDir.path}/clips').create(recursive: true);
+      // Ensure the directory exists
+      final localFile = File(localFilePath);
+      if (!await localFile.parent.exists()) {
+        await localFile.parent.create(recursive: true);
+      }
 
+      final dio = Dio();
       await dio.download(
         downloadUrl,
         localFilePath,

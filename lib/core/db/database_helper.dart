@@ -94,6 +94,11 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE playlist_clips ADD COLUMN sort_order INTEGER DEFAULT 0');
       } catch (_) {}
     }
+    // Ensure default fallback album exists
+    await db.execute(
+      "INSERT OR IGNORE INTO albums (id, name, created_at, cover_color) "
+      "VALUES ('imported_playlist_songs', 'Imported Tracks', 1700000000000, '94A3B8')"
+    );
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -172,6 +177,12 @@ class DatabaseHelper {
         type TEXT NOT NULL
       )
     ''');
+    
+    // Ensure default fallback album exists
+    await db.execute(
+      "INSERT OR IGNORE INTO albums (id, name, created_at, cover_color) "
+      "VALUES ('imported_playlist_songs', 'Imported Tracks', 1700000000000, '94A3B8')"
+    );
   }
 
   Future<void> close() async {

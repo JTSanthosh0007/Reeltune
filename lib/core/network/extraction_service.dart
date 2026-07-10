@@ -27,8 +27,8 @@ class ExtractionJob {
 
   factory ExtractionJob.fromJson(Map<String, dynamic> json) {
     return ExtractionJob(
-      jobId: json['jobId'] as String,
-      status: ExtractionStatus.fromString(json['status'] as String),
+      jobId: (json['jobId'] ?? json['id'] ?? '').toString(),
+      status: ExtractionStatus.fromString((json['status'] ?? 'pending').toString()),
       downloadUrl: json['downloadUrl'] as String?,
       error: json['error'] as String?,
       title: json['title'] as String?,

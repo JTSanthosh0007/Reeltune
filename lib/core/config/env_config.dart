@@ -28,8 +28,7 @@ class EnvConfig {
           keys[key] = value;
           if (key == 'API_BASE_URL') {
             _apiBaseUrl = value;
-            // Handle Android emulator localhost mapping dynamically
-            if (kDebugMode && Platform.isAndroid) {
+            if (Platform.isAndroid) {
               if (_apiBaseUrl.contains('localhost')) {
                 _apiBaseUrl = _apiBaseUrl.replaceAll('localhost', '10.0.2.2');
               } else if (_apiBaseUrl.contains('127.0.0.1')) {

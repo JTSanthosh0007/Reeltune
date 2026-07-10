@@ -215,9 +215,13 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
         // Retry on transient errors
         if (attempts > 3) {
           timer.cancel();
+          String errMsg = 'Connection error: $e';
+          if (e is ApiException) {
+            errMsg = e.message;
+          }
           state = state.copyWith(
             step: ExtractionStep.error,
-            errorMessage: 'Connection error: $e',
+            errorMessage: errMsg,
           );
         }
       }

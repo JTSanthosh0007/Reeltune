@@ -6,8 +6,7 @@ const db = require('../services/database');
 
 const router = express.Router();
 
-// In-memory job store (for MVP — use DynamoDB/Redis in production)
-const jobs = new Map();
+const { addExtractionJob, getJobStatus } = require('../services/queue');
 
 // Supported URL patterns
 const SUPPORTED_PATTERNS = [
@@ -35,11 +34,11 @@ router.post('/extract', async (req, res, next) => {
 
     // Validate input
     if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: 'Missing or invalid URL' });
+      return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Missing or invalid URL' });
     }
 
     if (!deviceId || typeof deviceId !== 'string') {
-      return res.status(400).json({ error: 'Missing device ID' });
+      return res.status(400).json({ success: false, error_code: 'MISSING_DEVICE_ID', message: 'Missing device ID' });
     }
 
     // Validate URL format
@@ -49,30 +48,14 @@ router.post('/extract', async (req, res, next) => {
       console.warn(`[Extract] URL may not be supported: ${url}`);
     }
 
-    // Create job
+    // Create job in BullMQ
     const jobId = uuidv4();
-    const job = {
-      id: jobId,
-      url,
-      deviceId,
-      quality: req.body.quality || 'high',
-      status: 'pending',
-      downloadUrl: null,
-      title: null,
-      error: null,
-      s3Key: null,
-      createdAt: Date.now(),
-    };
-
-    jobs.set(jobId, job);
-
-    console.log(`[Extract] Job ${jobId} created for URL: ${url} (quality: ${job.quality})`);
-
-    // Start extraction asynchronously
     const hostUrl = `${req.protocol}://${req.get('host')}`;
-    processJob(jobId, hostUrl).catch((err) => {
-      console.error(`[Extract] Job ${jobId} failed:`, err.message);
-    });
+    const quality = req.body.quality || 'high';
+
+    console.log(`[Extract] Queueing Job ${jobId} for URL: ${url} (quality: ${quality})`);
+
+    await addExtractionJob(jobId, { url, deviceId, quality, hostUrl });
 
     res.status(202).json({ jobId });
   } catch (err) {
@@ -86,21 +69,31 @@ router.post('/extract', async (req, res, next) => {
  *
  * Response: { jobId, status, downloadUrl?, title?, error? }
  */
-router.get('/status/:jobId', (req, res) => {
-  const { jobId } = req.params;
-  const job = jobs.get(jobId);
+router.get('/status/:jobId', async (req, res, next) => {
+  try {
+    const { jobId } = req.params;
+    const job = await getJobStatus(jobId);
 
-  if (!job) {
-    return res.status(404).json({ error: 'Job not found' });
+    if (!job) {
+      return res.status(404).json({ success: false, error_code: 'JOB_NOT_FOUND', message: 'Job not found' });
+    }
+
+    // Map BullMQ state to legacy Flutter app status mapping
+    let mappedStatus = 'pending';
+    if (job.state === 'active') mappedStatus = 'processing';
+    if (job.state === 'completed') mappedStatus = 'completed';
+    if (job.state === 'failed') mappedStatus = 'failed';
+
+    res.json({
+      jobId,
+      status: mappedStatus,
+      downloadUrl: job.result?.downloadUrl || null,
+      title: job.result?.title || null,
+      error: job.error || null,
+    });
+  } catch (err) {
+    next(err);
   }
-
-  res.json({
-    jobId: job.id,
-    status: job.status,
-    downloadUrl: job.downloadUrl,
-    title: job.title,
-    error: job.error,
-  });
 });
 
 /**
@@ -109,90 +102,24 @@ router.get('/status/:jobId', (req, res) => {
  */
 router.post('/confirm/:jobId', async (req, res) => {
   const { jobId } = req.params;
-  const job = jobs.get(jobId);
+  const job = await getJobStatus(jobId);
 
   if (!job) {
     return res.status(404).json({ error: 'Job not found' });
   }
 
-  // Delete from S3
-  if (job.s3Key) {
+  // Delete from S3 if we stored the S3 Key
+  if (job.result?.s3Key) {
     try {
-      await deleteFile(job.s3Key);
+      await deleteFile(job.result.s3Key);
       console.log(`[Cleanup] Deleted S3 file for job ${jobId}`);
     } catch (err) {
       console.error(`[Cleanup] Failed to delete S3 file:`, err.message);
     }
   }
 
-  // Remove from in-memory store
-  jobs.delete(jobId);
-
   res.json({ status: 'cleaned' });
 });
-
-/**
- * Process extraction job asynchronously
- */
-async function processJob(jobId, hostUrl) {
-  const job = jobs.get(jobId);
-  if (!job) return;
-
-  let attempts = 0;
-  const maxAttempts = 3;
-  let success = false;
-
-  while (attempts < maxAttempts && !success) {
-    attempts++;
-    try {
-      // Update status to processing
-      job.status = 'processing';
-      job.error = null;
-
-      // Extract audio using yt-dlp + ffmpeg
-      const result = await extractAudio(job.url, jobId, job.quality);
-
-      // Generate signed download URL
-      const downloadUrl = await getSignedDownloadUrl(result.s3Key, hostUrl);
-
-      // Update job with results
-      job.status = 'completed';
-      job.downloadUrl = downloadUrl;
-      job.title = result.title;
-      job.s3Key = result.s3Key;
-      success = true;
-
-      console.log(`[Extract] Job ${jobId} completed on attempt ${attempts}: "${result.title}"`);
-    } catch (err) {
-      console.warn(`[Extract] Job ${jobId} attempt ${attempts} failed:`, err.message);
-      if (attempts >= maxAttempts) {
-        job.status = 'failed';
-        job.error = err.message || 'Extraction failed after multiple attempts';
-        console.error(`[Extract] Job ${jobId} permanently failed:`, err.message);
-      } else {
-        // Wait 1.5 seconds before retrying
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-    }
-  }
-
-  if (success) {
-    // Auto-cleanup after 1 hour if not confirmed
-    setTimeout(async () => {
-      if (jobs.has(jobId)) {
-        if (job.s3Key) {
-          try {
-            await deleteFile(job.s3Key);
-            console.log(`[Cleanup] Auto-deleted S3 file for expired job ${jobId}`);
-          } catch (err) {
-            console.error(`[Cleanup] Auto-delete failed:`, err.message);
-          }
-        }
-        jobs.delete(jobId);
-      }
-    }, 3600000); // 1 hour
-  }
-}
 
 /**
  * POST /api/playlist/metadata
@@ -205,13 +132,13 @@ const handlePlaylistMetadata = async (req, res, next) => {
   try {
     const { url } = req.body;
     if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: 'Missing or invalid URL' });
+      return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Missing or invalid URL' });
     }
 
     if (url.includes('spotify.com')) {
       const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
       if (!match) {
-        return res.status(400).json({ error: 'Invalid Spotify playlist URL' });
+        return res.status(400).json({ success: false, error_code: 'INVALID_SPOTIFY_URL', message: 'Invalid Spotify playlist URL' });
       }
       const playlistId = match[1];
       const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
@@ -223,7 +150,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
       });
 
       if (!response.ok) {
-        return res.status(500).json({ error: 'Failed to fetch Spotify embed page' });
+        return res.status(500).json({ success: false, error_code: 'SPOTIFY_FETCH_ERROR', message: 'Failed to fetch Spotify embed page' });
       }
 
       const html = await response.text();
@@ -231,7 +158,12 @@ const handlePlaylistMetadata = async (req, res, next) => {
                           html.match(/<script id="initial-state" type="text\/plain">([\s\S]*?)<\/script>/);
 
       if (!scriptMatch) {
-        return res.status(500).json({ error: 'Spotify playlist embedding format changed or private' });
+        return res.status(500).json({
+          success: false,
+          error_code: 'SPOTIFY_PARSE_ERROR',
+          message: 'Spotify playlist embedding format changed or private',
+          details: 'We could not extract the metadata. Please ensure the playlist is public.'
+        });
       }
 
       let rawJson = scriptMatch[1];
@@ -266,14 +198,16 @@ const handlePlaylistMetadata = async (req, res, next) => {
         url,
         '--flat-playlist',
         '--dump-single-json',
+        '--playlist-end', '100', // Prevent timeout on massive playlists
         '--no-warnings',
         '--no-check-certificates',
+        '--extractor-args', 'youtube:player_client=android,web'
       ];
 
-      execFile(YTDLP_BIN, args, { maxBuffer: 10 * 1024 * 1024, timeout: 45000 }, (err, stdout, stderr) => {
+      execFile(YTDLP_BIN, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000 }, (err, stdout, stderr) => {
         if (err) {
           console.error(`[Playlist] YouTube error:`, stderr || err.message);
-          return res.status(500).json({ error: 'Failed to fetch YouTube playlist metadata' });
+          return res.status(500).json({ success: false, error_code: 'YOUTUBE_FETCH_ERROR', message: 'Failed to fetch YouTube playlist metadata' });
         }
 
         try {
@@ -292,7 +226,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
             tracks,
           });
         } catch (parseErr) {
-          return res.status(500).json({ error: 'Failed to parse YouTube playlist JSON' });
+          return res.status(500).json({ success: false, error_code: 'YOUTUBE_PARSE_ERROR', message: 'Failed to parse YouTube playlist JSON' });
         }
       });
     } else if (url.includes('music.apple.com')) {
@@ -479,7 +413,7 @@ router.get('/playlist/:id', (req, res) => {
  * POST /api/devices/register
  * Store or update user FCM tokens for push notifications
  */
-router.post('/devices/register', (req, res, next) => {
+router.post('/devices/register', async (req, res, next) => {
   const { deviceId, fcmToken, platform } = req.body;
 
   if (!deviceId || !fcmToken || !platform) {
@@ -488,21 +422,21 @@ router.post('/devices/register', (req, res, next) => {
 
   const query = `
     INSERT INTO devices (device_id, fcm_token, platform, updated_at)
-    VALUES (?, ?, ?, ?)
+    VALUES ($1, $2, $3, $4)
     ON CONFLICT(device_id) DO UPDATE SET
-      fcm_token = excluded.fcm_token,
-      platform = excluded.platform,
-      updated_at = excluded.updated_at
+      fcm_token = EXCLUDED.fcm_token,
+      platform = EXCLUDED.platform,
+      updated_at = EXCLUDED.updated_at
   `;
 
-  db.run(query, [deviceId, fcmToken, platform, Date.now()], function (err) {
-    if (err) {
-      console.error('[FCM-Register] Error saving device to database:', err.message);
-      return res.status(500).json({ error: 'Database insertion failed' });
-    }
+  try {
+    await db.query(query, [deviceId, fcmToken, platform, Date.now()]);
     console.log(`[FCM-Register] Device ${deviceId} successfully registered/updated.`);
     res.json({ success: true, message: 'Device token registered successfully' });
-  });
+  } catch (err) {
+    console.error('[FCM-Register] Error saving device to database:', err.message);
+    res.status(500).json({ success: false, error_code: 'DATABASE_ERROR', message: 'Database insertion failed' });
+  }
 });
 
 function parseISO8601Duration(duration) {

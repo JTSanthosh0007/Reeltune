@@ -80,6 +80,7 @@ function downloadWithYtDlp(url, outputPath) {
       '--no-warnings',
       '--no-check-certificates',
       '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '--extractor-args', 'youtube:player_client=android,web',
     ];
 
     let title = 'Audio Clip';
@@ -103,8 +104,11 @@ function downloadWithYtDlp(url, outputPath) {
         '--max-filesize', '100m',
         '--socket-timeout', '30',
         '--retries', '5',
+        '--retry-sleep', '2',
+        '--fragment-retries', '10',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         '--referer', 'https://www.google.com/',
+        '--extractor-args', 'youtube:player_client=android,web',
       ];
 
       execFile(YTDLP_BIN, downloadArgs, { timeout: 120000 }, (err, stdout, stderr) => {
@@ -117,8 +121,10 @@ function downloadWithYtDlp(url, outputPath) {
           }
 
           // Map descriptive error messages for common yt-dlp issues
-          if (errOutput.includes('Private video') || errOutput.includes('requires login') || errOutput.includes('login_required') || errOutput.includes('PrivateAccount')) {
-            return reject(new Error('Instagram blocked request: Private account or login required.'));
+          if (errOutput.includes('Sign in to confirm you') || errOutput.includes('bot')) {
+            return reject(new Error('Platform requires sign-in or triggered a bot challenge. Try again later.'));
+          } else if (errOutput.includes('Private video') || errOutput.includes('requires login') || errOutput.includes('login_required') || errOutput.includes('PrivateAccount')) {
+            return reject(new Error('Video is private or requires login.'));
           } else if (errOutput.includes('429') || errOutput.includes('Too Many Requests')) {
             return reject(new Error('Rate limited by platform. Please try again later.'));
           } else if (errOutput.includes('Video unavailable') || errOutput.includes('not found') || errOutput.includes('unavailable')) {

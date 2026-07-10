@@ -135,7 +135,66 @@ const handlePlaylistMetadata = async (req, res, next) => {
       return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Missing or invalid URL' });
     }
 
-    if (url.includes('spotify.com') || url.includes('youtube.com') || url.includes('youtu.be')) {
+    if (url.includes('spotify.com')) {
+      const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
+      if (!match) {
+        return res.status(400).json({ success: false, error_code: 'INVALID_SPOTIFY_URL', message: 'Invalid Spotify playlist URL' });
+      }
+      const playlistId = match[1];
+      const playlistUrl = `https://open.spotify.com/playlist/${playlistId}`;
+
+      try {
+        const response = await fetch(playlistUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          }
+        });
+
+        if (!response.ok) {
+          return res.status(500).json({ success: false, error_code: 'SPOTIFY_FETCH_ERROR', message: 'Failed to fetch Spotify playlist page' });
+        }
+
+        const html = await response.text();
+        const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/) || html.match(/<title>([^<]+)<\/title>/);
+        const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
+        
+        const title = titleMatch ? titleMatch[1] : 'Spotify Playlist';
+        const coverUrl = imageMatch ? imageMatch[1] : '';
+
+        // Robust parsing of Spotify tracks from SSR HTML
+        const chunks = html.split('data-testid="track-row"');
+        const tracks = chunks.slice(1).map((chunk) => {
+          const titleMatch = chunk.match(/id="listrow-title-track-spotify:track:[a-zA-Z0-9]+-\d+"[^>]*><span[^>]*>([^<]+)<\/span>/) ||
+                             chunk.match(/href="\/track\/[a-zA-Z0-9]+"[^>]*><p[^>]*><span[^>]*>([^<]+)<\/span>/) ||
+                             chunk.match(/href="\/track\/[a-zA-Z0-9]+"[^>]*>([^<]+)<\/a>/) ||
+                             chunk.match(/aria-label="([^"]+)"/); // Fallback to aria-label
+                             
+          const artistMatches = [...chunk.matchAll(/href="\/artist\/[a-zA-Z0-9]+"[^>]*>([^<]+)<\/a>/g)];
+          const artists = artistMatches.map(m => m[1]).join(', ') || 'Unknown Artist';
+
+          if (titleMatch) {
+            const trackTitle = titleMatch[1];
+            return {
+              title: trackTitle,
+              artist: artists,
+              url: `https://www.youtube.com/results?search_query=${encodeURIComponent(trackTitle + ' ' + artists)}`,
+              durationMs: 180000,
+            };
+          }
+          return null;
+        }).filter(Boolean);
+
+        return res.json({
+          title,
+          description: '',
+          coverUrl,
+          tracks,
+        });
+      } catch (err) {
+        console.error('[Spotify] Scraping error:', err.message);
+        return res.status(500).json({ success: false, error_code: 'SPOTIFY_PARSE_ERROR', message: 'Failed to parse Spotify playlist' });
+      }
+    } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
       const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
       const { execFile } = require('child_process');
       

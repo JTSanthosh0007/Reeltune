@@ -16,7 +16,8 @@ import '../notifications/notifications_provider.dart';
 import '../../core/storage/file_storage_service.dart';
 
 class PlaylistImportScreen extends ConsumerStatefulWidget {
-  const PlaylistImportScreen({super.key});
+  final String platform;
+  const PlaylistImportScreen({super.key, required this.platform});
 
   @override
   ConsumerState<PlaylistImportScreen> createState() => _PlaylistImportScreenState();
@@ -48,18 +49,29 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
     if (url.isEmpty) return;
 
     final lowerUrl = url.toLowerCase();
-    final isSupported = lowerUrl.contains('spotify.com') ||
-                        lowerUrl.contains('youtube.com') ||
-                        lowerUrl.contains('youtu.be') ||
-                        lowerUrl.contains('apple.com') ||
-                        lowerUrl.contains('jiosaavn') ||
-                        lowerUrl.endsWith('.m3u') ||
-                        lowerUrl.endsWith('.m3u8') ||
-                        lowerUrl.contains('/m3u');
+    bool isValid = false;
 
-    if (!isSupported) {
+    switch (widget.platform) {
+      case 'spotify':
+        isValid = lowerUrl.contains('spotify.com');
+        break;
+      case 'youtube':
+        isValid = lowerUrl.contains('youtube.com') || lowerUrl.contains('youtu.be');
+        break;
+      case 'apple':
+        isValid = lowerUrl.contains('apple.com');
+        break;
+      case 'jiosaavn':
+        isValid = lowerUrl.contains('jiosaavn');
+        break;
+      case 'm3u':
+        isValid = lowerUrl.endsWith('.m3u') || lowerUrl.endsWith('.m3u8') || lowerUrl.contains('/m3u');
+        break;
+    }
+
+    if (!isValid) {
       setState(() {
-        _error = 'Platform currently not supported.';
+        _error = 'Please enter a valid URL for the selected platform.';
         _isLoading = false;
       });
       return;
@@ -270,9 +282,35 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    String screenTitle = 'Import Playlist';
+    String hintText = 'Paste playlist or album URL...';
+
+    switch (widget.platform) {
+      case 'spotify':
+        screenTitle = 'Import Spotify';
+        hintText = 'Paste Spotify playlist or album URL...';
+        break;
+      case 'youtube':
+        screenTitle = 'Import YouTube Music';
+        hintText = 'Paste YouTube/YT Music playlist URL...';
+        break;
+      case 'apple':
+        screenTitle = 'Import Apple Music';
+        hintText = 'Paste Apple Music playlist URL...';
+        break;
+      case 'jiosaavn':
+        screenTitle = 'Import JioSaavn';
+        hintText = 'Paste JioSaavn playlist URL...';
+        break;
+      case 'm3u':
+        screenTitle = 'Import M3U Playlist';
+        hintText = 'Paste M3U playlist file URL...';
+        break;
+    }
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Import Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(screenTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
       ),
       body: Container(
@@ -295,7 +333,7 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
                         controller: _urlController,
                         style: TextStyle(color: isDark ? Colors.white : AppColors.textPrimary),
                         decoration: InputDecoration(
-                          hintText: 'Paste Spotify or YouTube playlist URL...',
+                          hintText: hintText,
                           prefixIcon: const Icon(Icons.link_rounded, color: AppColors.primary),
                           filled: true,
                           fillColor: isDark ? AppColors.darkCard : Colors.white,

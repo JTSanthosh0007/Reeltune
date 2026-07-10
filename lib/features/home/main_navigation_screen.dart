@@ -17,6 +17,7 @@ import 'home_screen.dart';
 
 // Import destinations for the navigation drawer
 import '../import/playlist_import_screen.dart';
+import '../import/import_selection_screen.dart';
 import '../import/ImportNotifier.dart';
 import '../albums/album_providers.dart';
 import '../albums/recent_songs_screen.dart';
@@ -1036,13 +1037,13 @@ class _ImportOptionsBottomSheet extends StatelessWidget {
               backgroundColor: AppColors.skyBlue.withValues(alpha: 0.1),
               child: const Icon(Icons.playlist_add_rounded, color: AppColors.skyBlue),
             ),
-            title: const Text('Import Spotify / YouTube Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: const Text('Fetch tracks from public playlists and download them'),
+            title: const Text('Import Songs', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('Import playlists and albums from popular streaming platforms'),
             onTap: () {
               Navigator.pop(context);
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder: (_) => const PlaylistImportScreen(),
+                  builder: (_) => const ImportSelectionScreen(),
                 ),
               );
             },

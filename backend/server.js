@@ -66,6 +66,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Root Web Page so you can verify the server is running in your browser!
+app.get('/', (req, res) => {
+  res.send(`
+    <html>
+      <body style="background-color: #121212; color: #1DB954; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0;">
+        <h1 style="font-size: 3rem; margin-bottom: 10px;">🎵 ReelTune Backend is Live!</h1>
+        <p style="color: #ffffff; font-size: 1.2rem;">The server is actively running and ready to extract audio.</p>
+      </body>
+    </html>
+  `);
+});
+
 // Error handling middleware with exception logs
 app.use((err, req, res, next) => {
   const timestamp = new Date().toISOString();

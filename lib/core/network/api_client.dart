@@ -110,14 +110,16 @@ class ApiClient {
 
   ApiException _handleError(DioException e) {
     final statusCode = e.response?.statusCode;
+    final requestPath = e.requestOptions.path;
+    final requestHost = e.requestOptions.baseUrl;
     
     // Check for HTML error responses from Render/Nginx proxies (502, 503, 504, 404)
     if (statusCode != null) {
       if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
-        return ApiException('Backend service is booting up or temporarily offline. Please retry in 30 seconds.', statusCode);
+        return ApiException('Backend server ($requestHost) is offline or rebooting. Status: $statusCode', statusCode);
       }
       if (statusCode == 404) {
-        return ApiException('API endpoint not found on server (404). Check backend route configuration.', statusCode);
+        return ApiException("Backend endpoint '$requestPath' not found on server ($requestHost). Verify deployment URL.", statusCode);
       }
     }
 
@@ -125,30 +127,30 @@ class ApiClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return ApiException('Connection timed out. The backend server is taking too long to respond.', statusCode);
+        return ApiException('Connection timed out. The backend server ($requestHost) took too long to respond.', statusCode);
       case DioExceptionType.badResponse:
         final message = _extractErrorMessage(e.response);
         if (statusCode == 429) {
           return ApiException('Rate limit exceeded. Please wait before trying again.', statusCode);
         }
         if (statusCode != null && statusCode >= 500) {
-          return ApiException('Server Internal Error ($statusCode): $message', statusCode);
+          return ApiException('Backend internal error ($statusCode): $message', statusCode);
         }
         return ApiException(message, statusCode);
       case DioExceptionType.cancel:
         return ApiException('Request was cancelled.', null);
       case DioExceptionType.connectionError:
-        return ApiException('Backend service is currently offline or unreachable. Please verify the API server is running.', null);
+        return ApiException('Backend server ($requestHost) is completely unreachable. Verify internet or API URL.', null);
       default:
         // Try to inspect the nested exception for SSL or Socket failures
         final err = e.error;
         if (err != null) {
           final errStr = err.toString();
           if (errStr.contains('HandshakeException') || errStr.contains('CERTIFICATE_VERIFY_FAILED')) {
-            return ApiException('SSL certificate verification failed. Check the backend SSL/TLS certificate configuration.', null);
+            return ApiException('SSL certificate verification failed for $requestHost.', null);
           }
           if (errStr.contains('SocketException')) {
-            return ApiException('Network connection failed (unreachable host or socket error). Verify device connectivity.', null);
+            return ApiException('Network connection failed. The host ($requestHost) could not be reached.', null);
           }
           return ApiException('Connection failed: $errStr', null);
         }

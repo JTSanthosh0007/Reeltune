@@ -79,8 +79,9 @@ function downloadWithYtDlp(url, outputPath) {
       '--no-download',
       '--no-warnings',
       '--no-check-certificates',
-      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      '--extractor-args', 'youtube:player_client=android,web',
+      '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+      '--extractor-args', 'youtube:player_client=ios,tv',
+      '--force-ipv4',
     ];
 
     let title = 'Audio Clip';
@@ -106,9 +107,10 @@ function downloadWithYtDlp(url, outputPath) {
         '--retries', '5',
         '--retry-sleep', '2',
         '--fragment-retries', '10',
-        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '--user-agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
         '--referer', 'https://www.google.com/',
-        '--extractor-args', 'youtube:player_client=android,web',
+        '--extractor-args', 'youtube:player_client=ios,tv',
+        '--force-ipv4',
       ];
 
       execFile(YTDLP_BIN, downloadArgs, { timeout: 120000 }, (err, stdout, stderr) => {

@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 # Install yt-dlp and ffmpeg
 RUN apk add --no-cache python3 py3-pip ffmpeg \
-    && pip3 install --break-system-packages yt-dlp
+    && pip3 install --break-system-packages -U https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz
 
 # Create app directory
 WORKDIR /app

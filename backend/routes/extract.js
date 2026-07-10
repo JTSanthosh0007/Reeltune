@@ -201,7 +201,8 @@ const handlePlaylistMetadata = async (req, res, next) => {
         '--playlist-end', '100', // Prevent timeout on massive playlists
         '--no-warnings',
         '--no-check-certificates',
-        '--extractor-args', 'youtube:player_client=android,web'
+        '--extractor-args', 'youtube:player_client=ios,tv',
+        '--force-ipv4'
       ];
 
       execFile(YTDLP_BIN, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000 }, (err, stdout, stderr) => {

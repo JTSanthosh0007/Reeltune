@@ -58,7 +58,8 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAdFree = ref.watch(adFreeProvider);
     final currentIndex = ref.watch(navigationIndexProvider);
-    final showBanner = currentIndex != 4 && !isAdFree;
+    final bannerHeight = ref.watch(bannerAdHeightProvider);
+    final showBanner = currentIndex != 4 && !isAdFree && bannerHeight > 0;
 
     return PopScope(
       canPop: false,
@@ -122,7 +123,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               left: 0,
               right: 0,
               bottom: showBanner 
-                  ? (50.0 + MediaQuery.of(context).padding.bottom + 76.0) 
+                  ? (bannerHeight + MediaQuery.of(context).padding.bottom + 76.0) 
                   : (MediaQuery.of(context).padding.bottom + 76.0),
               child: const MiniPlayer(),
             ),
@@ -132,7 +133,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               left: 0,
               right: 0,
               bottom: showBanner 
-                  ? (50.0 + MediaQuery.of(context).padding.bottom) 
+                  ? (bannerHeight + MediaQuery.of(context).padding.bottom) 
                   : MediaQuery.of(context).padding.bottom,
               child: _CustomBottomNavigationBar(
                 currentIndex: currentIndex,
@@ -142,7 +143,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             ),
 
             // Banner Ad Widget anchored at the very bottom
-            if (showBanner)
+            if (currentIndex != 4 && !isAdFree)
               Positioned(
                 left: 0,
                 right: 0,

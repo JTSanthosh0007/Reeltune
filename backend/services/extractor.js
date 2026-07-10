@@ -221,11 +221,11 @@ async function downloadWithCobalt(url, outputPath) {
   return new Promise((resolve, reject) => {
     const postData = JSON.stringify({
       url: url,
-      isAudioOnly: true,
-      aFormat: 'mp3'
+      downloadMode: 'audio',
+      audioFormat: 'mp3'
     });
 
-    const req = https.request('https://api.cobalt.tools/api/json', {
+    const req = https.request('https://api.cobalt.tools/', {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
@@ -239,13 +239,13 @@ async function downloadWithCobalt(url, outputPath) {
       res.on('end', () => {
         try {
           const json = JSON.parse(data);
-          if (json.status === 'error') {
-            return reject(new Error('Cobalt API error: ' + json.text));
+          if (json.status === 'error' || json.error) {
+            return reject(new Error('Cobalt API error: ' + (json.text || json.error || 'Unknown error')));
           }
           
           const downloadUrl = json.url;
           if (!downloadUrl) {
-            return reject(new Error('Cobalt API did not return a download URL'));
+            return reject(new Error('Cobalt API did not return a download URL. Status: ' + json.status));
           }
 
           console.log(`[Cobalt] Downloading from: ${downloadUrl}`);

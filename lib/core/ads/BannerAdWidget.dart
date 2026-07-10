@@ -7,6 +7,8 @@ import '../theme/app_colors.dart';
 import 'AdManager.dart';
 import 'ConsentService.dart';
 
+final bannerAdHeightProvider = StateProvider<double>((ref) => 0.0);
+
 class BannerAdWidget extends ConsumerStatefulWidget {
   const BannerAdWidget({super.key});
 
@@ -77,6 +79,7 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
             _isLoading = false;
             _retryAttempt = 0; // Reset retry counter on success
           });
+          ref.read(bannerAdHeightProvider.notifier).state = _adSize?.height.toDouble() ?? 50.0;
           debugPrint('BannerAd loaded successfully.');
         },
         onAdFailedToLoad: (ad, error) {
@@ -89,6 +92,7 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
             _isLoaded = false;
             _isLoading = false;
           });
+          ref.read(bannerAdHeightProvider.notifier).state = 0.0;
 
           // Exponential backoff retry (cap at 64 seconds)
           _retryAttempt++;
@@ -109,6 +113,9 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
   @override
   void dispose() {
     _bannerAd?.dispose();
+    Future.microtask(() {
+      ref.read(bannerAdHeightProvider.notifier).state = 0.0;
+    });
     super.dispose();
   }
 

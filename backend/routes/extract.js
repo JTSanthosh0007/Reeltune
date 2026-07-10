@@ -128,61 +128,106 @@ router.post('/confirm/:jobId', async (req, res) => {
  * Body: { url: string }
  * Response: { title, description, coverUrl, tracks: [{ title, artist, durationMs, url }] }
  */
+// Helper to follow redirects and get final canonical URL
+async function resolveRedirect(url) {
+  if (!url) return url;
+  if (url.includes('spotify.link') || url.includes('jiosaav.in') || url.includes('youtu.be')) {
+    try {
+      const response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+      return response.url;
+    } catch (e) {
+      try {
+        const response = await fetch(url, { redirect: 'follow' });
+        return response.url;
+      } catch (err) {
+        return url;
+      }
+    }
+  }
+  return url;
+}
+
+function parseDurationToMs(durationStr) {
+  if (!durationStr) return 180000;
+  const parts = durationStr.split(':').map(Number);
+  if (parts.length === 2) {
+    return (parts[0] * 60 + parts[1]) * 1000;
+  } else if (parts.length === 3) {
+    return ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 1000;
+  }
+  return 180000;
+}
+
 const handlePlaylistMetadata = async (req, res, next) => {
   try {
-    const { url } = req.body;
+    let { url } = req.body;
     if (!url || typeof url !== 'string') {
       return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Missing or invalid URL' });
     }
 
-    if (url.includes('spotify.com')) {
-      const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
+    const resolvedUrl = await resolveRedirect(url);
+
+    if (resolvedUrl.includes('spotify.com')) {
+      const match = resolvedUrl.match(/playlist\/([a-zA-Z0-9]+)/) || resolvedUrl.match(/album\/([a-zA-Z0-9]+)/);
       if (!match) {
-        return res.status(400).json({ success: false, error_code: 'INVALID_SPOTIFY_URL', message: 'Invalid Spotify playlist URL' });
+        return res.status(400).json({ success: false, error_code: 'INVALID_SPOTIFY_URL', message: 'Invalid Spotify playlist or album URL' });
       }
+      const type = resolvedUrl.includes('/album/') ? 'album' : 'playlist';
       const playlistId = match[1];
-      const playlistUrl = `https://open.spotify.com/playlist/${playlistId}`;
+      const embedUrl = `https://open.spotify.com/embed/${type}/${playlistId}`;
 
       try {
-        const response = await fetch(playlistUrl, {
+        const response = await fetch(embedUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           }
         });
 
         if (!response.ok) {
-          return res.status(500).json({ success: false, error_code: 'SPOTIFY_FETCH_ERROR', message: 'Failed to fetch Spotify playlist page' });
+          return res.status(500).json({ success: false, error_code: 'SPOTIFY_FETCH_ERROR', message: 'Failed to fetch Spotify embed page' });
         }
 
         const html = await response.text();
-        const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/) || html.match(/<title>([^<]+)<\/title>/);
-        const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/);
-        
-        const title = titleMatch ? titleMatch[1] : 'Spotify Playlist';
+        const imageMatch = html.match(/<meta property="og:image" content="([^"]+)"/) || html.match(/<img[^>]+src="([^"]+)"/);
         const coverUrl = imageMatch ? imageMatch[1] : '';
 
-        // Robust parsing of Spotify tracks from SSR HTML
-        const chunks = html.split('data-testid="track-row"');
+        const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/) || html.match(/<title>([^<]+)<\/title>/);
+        const title = titleMatch ? titleMatch[1].replace(' - album by...', '').trim() : 'Spotify Import';
+
+        // Parse tracks from embed HTML
+        const chunks = html.split(/TracklistRow_trackListRow/);
         const tracks = chunks.slice(1).map((chunk) => {
-          const titleMatch = chunk.match(/id="listrow-title-track-spotify:track:[a-zA-Z0-9]+-\d+"[^>]*><span[^>]*>([^<]+)<\/span>/) ||
-                             chunk.match(/href="\/track\/[a-zA-Z0-9]+"[^>]*><p[^>]*><span[^>]*>([^<]+)<\/span>/) ||
-                             chunk.match(/href="\/track\/[a-zA-Z0-9]+"[^>]*>([^<]+)<\/a>/) ||
-                             chunk.match(/aria-label="([^"]+)"/); // Fallback to aria-label
+          const titleMatch = chunk.match(/TracklistRow_title__[^"]*"[^>]*>([^<]+)<\/h3>/) ||
+                             chunk.match(/<h3[^>]*>([^<]+)<\/h3>/);
                              
-          const artistMatches = [...chunk.matchAll(/href="\/artist\/[a-zA-Z0-9]+"[^>]*>([^<]+)<\/a>/g)];
-          const artists = artistMatches.map(m => m[1]).join(', ') || 'Unknown Artist';
+          const artistMatch = chunk.match(/TracklistRow_subtitle__[^"]*"[^>]*>([^<]+)<\/h4>/) ||
+                              chunk.match(/<h4[^>]*>([^<]+)<\/h4>/);
+
+          const durationMatch = chunk.match(/TracklistRow_durationCell__[^"]*"[^>]*>([^<]+)<\/div>/) ||
+                                chunk.match(/<div[^>]*duration-cell[^>]*>([^<]+)<\/div>/) ||
+                                chunk.match(/>(\d{2}:\d{2})</);
 
           if (titleMatch) {
-            const trackTitle = titleMatch[1];
+            const trackTitle = titleMatch[1].trim();
+            const trackArtist = artistMatch ? artistMatch[1].replace(/&nbsp;/g, ' ').replace(/\u00a0/g, ' ').trim() : 'Unknown Artist';
+            const durationMs = durationMatch ? parseDurationToMs(durationMatch[1]) : 180000;
             return {
               title: trackTitle,
-              artist: artists,
-              url: `https://www.youtube.com/results?search_query=${encodeURIComponent(trackTitle + ' ' + artists)}`,
-              durationMs: 180000,
+              artist: trackArtist,
+              url: `https://www.youtube.com/results?search_query=${encodeURIComponent(trackTitle + ' ' + trackArtist)}`,
+              durationMs,
             };
           }
           return null;
         }).filter(Boolean);
+
+        if (tracks.length === 0) {
+          return res.status(500).json({
+            success: false,
+            error_code: 'SPOTIFY_EMPTY_PLAYLIST',
+            message: 'No tracks found in the Spotify playlist or album. Make sure it is public.'
+          });
+        }
 
         return res.json({
           title,
@@ -194,12 +239,12 @@ const handlePlaylistMetadata = async (req, res, next) => {
         console.error('[Spotify] Scraping error:', err.message);
         return res.status(500).json({ success: false, error_code: 'SPOTIFY_PARSE_ERROR', message: 'Failed to parse Spotify playlist' });
       }
-    } else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    } else if (resolvedUrl.includes('youtube.com') || resolvedUrl.includes('youtu.be')) {
       const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
       const { execFile } = require('child_process');
       
       const args = [
-        url,
+        resolvedUrl,
         '--flat-playlist',
         '--dump-single-json',
         '--playlist-end', '100', // Prevent timeout on massive playlists
@@ -213,7 +258,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
         if (err) {
           console.warn(`[Playlist] yt-dlp failed, falling back to YouTube HTML scrape:`, stderr || err.message);
           try {
-            const scrapedData = await parseYoutubePlaylistScrape(url);
+            const scrapedData = await parseYoutubePlaylistScrape(resolvedUrl);
             return res.json(scrapedData);
           } catch (scrapeErr) {
             console.error(`[Playlist] HTML scrape fallback also failed:`, scrapeErr.message);
@@ -245,8 +290,8 @@ const handlePlaylistMetadata = async (req, res, next) => {
           return res.status(500).json({ success: false, error_code: 'PLAYLIST_PARSE_ERROR', message: 'Failed to parse playlist JSON' });
         }
       });
-    } else if (url.includes('music.apple.com')) {
-      const response = await fetch(url, {
+    } else if (resolvedUrl.includes('music.apple.com')) {
+      const response = await fetch(resolvedUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
@@ -310,8 +355,8 @@ const handlePlaylistMetadata = async (req, res, next) => {
         coverUrl,
         tracks,
       });
-    } else if (url.includes('jiosaavn.com')) {
-      const response = await fetch(url, {
+    } else if (resolvedUrl.includes('jiosaavn.com')) {
+      const response = await fetch(resolvedUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         }
@@ -331,20 +376,58 @@ const handlePlaylistMetadata = async (req, res, next) => {
       const coverUrl = imageMatch ? imageMatch[1] : '';
       
       const tracks = [];
-      const songMatches = [...html.matchAll(/class="[^"]*song-title[^"]*"[^>]*>\s*<a[^>]*>\s*([^<]+)/g)] ||
-                          [...html.matchAll(/class="[^"]*song[^"]*title[^"]*"[^>]*>\s*([^<]+)/g)];
-      const artistMatches = [...html.matchAll(/class="[^"]*song-artists[^"]*"[^>]*>\s*<a[^>]*>\s*([^<]+)/g)] ||
-                            [...html.matchAll(/class="[^"]*artist[^"]*link[^"]*"[^>]*>\s*([^<]+)/g)];
-      
-      for (let i = 0; i < songMatches.length; i++) {
-        const sTitle = songMatches[i][1].trim();
-        const sArtist = (artistMatches[i] ? artistMatches[i][1] : 'Unknown Artist').trim();
+      const isSong = resolvedUrl.includes('/song/');
+
+      if (isSong) {
+        const artist = description.includes('by') ? description.split('by')[1]?.trim() : 'Unknown Artist';
         tracks.push({
-          title: sTitle,
-          artist: sArtist,
-          url: `https://www.youtube.com/results?search_query=${encodeURIComponent(sTitle + ' ' + sArtist)}`,
+          title,
+          artist,
+          url: `https://www.youtube.com/results?search_query=${encodeURIComponent(title + ' ' + artist)}`,
           durationMs: 180000,
         });
+      } else {
+        const songMatches = [...html.matchAll(/class="[^"]*song-title[^"]*"[^>]*>\s*<a[^>]*>\s*([^<]+)/g)] ||
+                            [...html.matchAll(/class="[^"]*song[^"]*title[^"]*"[^>]*>\s*([^<]+)/g)];
+        const artistMatches = [...html.matchAll(/class="[^"]*song-artists[^"]*"[^>]*>\s*<a[^>]*>\s*([^<]+)/g)] ||
+                              [...html.matchAll(/class="[^"]*artist[^!]*link[^"]*"[^>]*>\s*([^<]+)/g)];
+        
+        for (let i = 0; i < songMatches.length; i++) {
+          const sTitle = songMatches[i][1].trim();
+          const sArtist = (artistMatches[i] ? artistMatches[i][1] : 'Unknown Artist').trim();
+          tracks.push({
+            title: sTitle,
+            artist: sArtist,
+            url: `https://www.youtube.com/results?search_query=${encodeURIComponent(sTitle + ' ' + sArtist)}`,
+            durationMs: 180000,
+          });
+        }
+
+        // Schema JSON Fallback if regex matched nothing
+        if (tracks.length === 0) {
+          const schemas = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+          for (const schema of schemas) {
+            try {
+              const parsed = JSON.parse(schema[1]);
+              const items = parsed.track || parsed.itemListElement || [];
+              if (items.length > 0) {
+                for (const t of items) {
+                  const item = t.item || t;
+                  if (item.name) {
+                    const sTitle = item.name;
+                    const sArtist = item.byArtist?.name || item.author || 'Unknown Artist';
+                    tracks.push({
+                      title: sTitle,
+                      artist: sArtist,
+                      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(sTitle + ' ' + sArtist)}`,
+                      durationMs: 180000,
+                    });
+                  }
+                }
+              }
+            } catch (e) {}
+          }
+        }
       }
       
       return res.json({
@@ -353,8 +436,8 @@ const handlePlaylistMetadata = async (req, res, next) => {
         coverUrl,
         tracks,
       });
-    } else if (url.endsWith('.m3u') || url.endsWith('.m3u8') || url.includes('/m3u')) {
-      const response = await fetch(url);
+    } else if (resolvedUrl.endsWith('.m3u') || resolvedUrl.endsWith('.m3u8') || resolvedUrl.includes('/m3u')) {
+      const response = await fetch(resolvedUrl);
       if (!response.ok) {
         return res.status(500).json({ error: 'Failed to fetch M3U playlist file' });
       }
@@ -395,7 +478,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
       
       const path = require('path');
       return res.json({
-        title: path.basename(url, path.extname(url)) || 'M3U Playlist',
+        title: path.basename(resolvedUrl, path.extname(resolvedUrl)) || 'M3U Playlist',
         description: 'Imported M3U Playlist',
         coverUrl: '',
         tracks,

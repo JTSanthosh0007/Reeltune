@@ -44,28 +44,38 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchMetadata() async {
-    final url = _urlController.text.trim();
-    if (url.isEmpty) return;
+  String _cleanUrl(String text) {
+    final exp = RegExp(r'(https?://[^\s]+)');
+    final match = exp.firstMatch(text);
+    if (match != null) {
+      return match.group(0)!;
+    }
+    return text;
+  }
 
+  Future<void> _fetchMetadata() async {
+    final rawUrl = _urlController.text.trim();
+    if (rawUrl.isEmpty) return;
+
+    final url = _cleanUrl(rawUrl);
     final lowerUrl = url.toLowerCase();
     bool isValid = false;
 
     switch (widget.platform) {
       case 'spotify':
-        isValid = lowerUrl.contains('spotify.com');
+        isValid = lowerUrl.contains('spotify.com') || lowerUrl.contains('spotify.link') || lowerUrl.contains('open.spotify');
         break;
       case 'youtube':
-        isValid = lowerUrl.contains('youtube.com') || lowerUrl.contains('youtu.be');
+        isValid = lowerUrl.contains('youtube.com') || lowerUrl.contains('youtu.be') || lowerUrl.contains('music.youtube.com');
         break;
       case 'apple':
-        isValid = lowerUrl.contains('apple.com');
+        isValid = lowerUrl.contains('apple.com') || lowerUrl.contains('music.apple.com');
         break;
       case 'jiosaavn':
-        isValid = lowerUrl.contains('jiosaavn');
+        isValid = lowerUrl.contains('jiosaavn.com') || lowerUrl.contains('jiosaav.in');
         break;
       case 'm3u':
-        isValid = lowerUrl.endsWith('.m3u') || lowerUrl.endsWith('.m3u8') || lowerUrl.contains('/m3u');
+        isValid = lowerUrl.endsWith('.m3u') || lowerUrl.endsWith('.m3u8') || lowerUrl.contains('/m3u') || lowerUrl.contains('.m3u') || lowerUrl.contains('.m3u8');
         break;
     }
 
@@ -127,7 +137,12 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
   }
 
   Future<void> _importPlaylistStructure() async {
-    if (_playlistTitle == null) return;
+    if (_playlistTitle == null || _tracks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cannot import an empty playlist.')),
+      );
+      return;
+    }
 
     try {
       // Create local playlist
@@ -164,104 +179,116 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
       _downloadProgress[index] = 0.0;
     });
 
-    try {
-      final title = track['title'] as String;
-      final artist = track['artist'] as String;
-      final queryUrl = track['url'] as String;
+    int attempt = 0;
+    const maxAttempts = 3;
 
-      // For Spotify, queryUrl is YouTube search results page link.
-      // We submit search query to backend.
-      final submitUrl = queryUrl.contains('youtube.com/results')
-          ? 'ytsearch:${title} ${artist}'
-          : queryUrl;
+    while (attempt < maxAttempts) {
+      attempt++;
+      try {
+        final title = track['title'] as String;
+        final artist = track['artist'] as String;
+        final queryUrl = track['url'] as String;
 
-      final extractionService = ref.read(extractionServiceProvider);
-      
-      // 1. Submit job
-      final jobId = await extractionService.submitExtraction(submitUrl, quality: 'high');
+        // For Spotify, queryUrl is YouTube search results page link.
+        // We submit search query to backend.
+        final submitUrl = queryUrl.contains('youtube.com/results')
+            ? 'ytsearch:${title} ${artist}'
+            : queryUrl;
 
-      // 2. Poll job status
-      String? downloadUrl;
-      int attempts = 0;
-      while (attempts < 40) {
-        attempts++;
-        await Future.delayed(const Duration(seconds: 2));
-        try {
-          final statusRes = await extractionService.pollStatus(jobId);
-          if (statusRes.status == ExtractionStatus.completed) {
-            downloadUrl = statusRes.downloadUrl;
-            break;
-          } else if (statusRes.status == ExtractionStatus.failed) {
-            throw Exception(statusRes.error ?? 'Extraction failed');
+        final extractionService = ref.read(extractionServiceProvider);
+        
+        // 1. Submit job
+        final jobId = await extractionService.submitExtraction(submitUrl, quality: 'high');
+
+        // 2. Poll job status
+        String? downloadUrl;
+        int pollAttempts = 0;
+        while (pollAttempts < 40) {
+          pollAttempts++;
+          await Future.delayed(const Duration(seconds: 2));
+          try {
+            final statusRes = await extractionService.pollStatus(jobId);
+            if (statusRes.status == ExtractionStatus.completed) {
+              downloadUrl = statusRes.downloadUrl;
+              break;
+            } else if (statusRes.status == ExtractionStatus.failed) {
+              throw Exception(statusRes.error ?? 'Extraction failed');
+            }
+          } catch (e) {
+            if (pollAttempts >= 40) {
+              rethrow;
+            }
+            debugPrint('[Import-Poll] Transient polling error (attempt $pollAttempts): $e');
           }
-        } catch (e) {
-          if (attempts >= 40) {
-            rethrow;
-          }
-          debugPrint('[Import-Poll] Transient polling error (attempt $attempts): $e');
+        }
+
+        if (downloadUrl == null) {
+          throw Exception('Download timeout');
+        }
+
+        // 3. Download actual MP3 file
+        final fileService = ref.read(fileStorageServiceProvider);
+        final localFilePath = await fileService.getClipFilePath('imported_playlist_songs', jobId);
+        
+        // Ensure the directory exists
+        final localFile = File(localFilePath);
+        if (!await localFile.parent.exists()) {
+          await localFile.parent.create(recursive: true);
+        }
+
+        final dio = Dio();
+        await dio.download(
+          downloadUrl,
+          localFilePath,
+          onReceiveProgress: (received, total) {
+            if (total > 0) {
+              setState(() {
+                _downloadProgress[index] = received / total;
+              });
+            }
+          },
+        );
+
+        // 4. Save to local SQLite
+        final clip = Clip(
+          id: jobId,
+          albumId: 'imported_playlist_songs', // Fallback Category
+          title: title,
+          filePath: localFilePath,
+          durationMs: track['durationMs'] as int?,
+          sourcePlatform: 'download',
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          artist: artist,
+          albumName: _playlistTitle,
+        );
+
+        await ref.read(clipRepositoryProvider).insertClip(clip);
+        await ref.read(playlistsProvider.notifier).addClipToPlaylist(_createdPlaylist!.id, clip.id);
+
+        setState(() {
+          _downloadStates[index] = 'success';
+        });
+
+        ref.read(notificationsProvider.notifier).addNotification(
+              title: 'Track Downloaded 🎵',
+              body: '"$title" imported successfully.',
+              type: 'import',
+            );
+        return; // Success, exit function
+      } catch (e, stack) {
+        debugPrintStack(stackTrace: stack, label: 'Error in _downloadTrack (attempt $attempt)');
+        if (attempt >= maxAttempts) {
+          setState(() {
+            _downloadStates[index] = 'error';
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to download "${track['title']}" after $maxAttempts attempts: $e')),
+          );
+        } else {
+          // Wait 3 seconds before retrying
+          await Future.delayed(const Duration(seconds: 3));
         }
       }
-
-      if (downloadUrl == null) {
-        throw Exception('Download timeout');
-      }
-
-      // 3. Download actual MP3 file
-      final fileService = ref.read(fileStorageServiceProvider);
-      final localFilePath = await fileService.getClipFilePath('imported_playlist_songs', jobId);
-      
-      // Ensure the directory exists
-      final localFile = File(localFilePath);
-      if (!await localFile.parent.exists()) {
-        await localFile.parent.create(recursive: true);
-      }
-
-      final dio = Dio();
-      await dio.download(
-        downloadUrl,
-        localFilePath,
-        onReceiveProgress: (received, total) {
-          if (total > 0) {
-            setState(() {
-              _downloadProgress[index] = received / total;
-            });
-          }
-        },
-      );
-
-      // 4. Save to local SQLite
-      final clip = Clip(
-        id: jobId,
-        albumId: 'imported_playlist_songs', // Fallback Category
-        title: title,
-        filePath: localFilePath,
-        durationMs: track['durationMs'] as int?,
-        sourcePlatform: 'download',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-        artist: artist,
-        albumName: _playlistTitle,
-      );
-
-      await ref.read(clipRepositoryProvider).insertClip(clip);
-      await ref.read(playlistsProvider.notifier).addClipToPlaylist(_createdPlaylist!.id, clip.id);
-
-      setState(() {
-        _downloadStates[index] = 'success';
-      });
-
-      ref.read(notificationsProvider.notifier).addNotification(
-            title: 'Track Downloaded 🎵',
-            body: '"$title" imported successfully.',
-            type: 'import',
-          );
-    } catch (e, stack) {
-      debugPrintStack(stackTrace: stack, label: 'Error in _downloadTrack');
-      setState(() {
-        _downloadStates[index] = 'error';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to download "${track['title']}": $e')),
-      );
     }
   }
 
@@ -271,8 +298,17 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
     }
     if (_createdPlaylist == null) return;
 
+    // Queue all downloadable songs first
+    setState(() {
+      for (int i = 0; i < _tracks.length; i++) {
+        if (_downloadStates[i] == 'idle' || _downloadStates[i] == 'error') {
+          _downloadStates[i] = 'queued';
+        }
+      }
+    });
+
     for (int i = 0; i < _tracks.length; i++) {
-      if (_downloadStates[i] == 'idle' || _downloadStates[i] == 'error') {
+      if (_downloadStates[i] == 'queued') {
         await _downloadTrack(i);
       }
     }
@@ -514,14 +550,23 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
                                           strokeWidth: 2.5,
                                         ),
                                       )
-                                    : state == 'success'
-                                        ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
-                                        : state == 'error'
-                                            ? const Icon(Icons.error_outline_rounded, color: AppColors.error)
-                                            : IconButton(
-                                                icon: const Icon(Icons.download_rounded, color: AppColors.primary),
-                                                onPressed: () => _downloadTrack(index),
-                                              ),
+                                    : state == 'queued'
+                                        ? const SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                              color: AppColors.primary,
+                                              strokeWidth: 1.5,
+                                            ),
+                                          )
+                                        : state == 'success'
+                                            ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
+                                            : state == 'error'
+                                                ? const Icon(Icons.error_outline_rounded, color: AppColors.error)
+                                                : IconButton(
+                                                    icon: const Icon(Icons.download_rounded, color: AppColors.primary),
+                                                    onPressed: () => _downloadTrack(index),
+                                                  ),
                               ),
                             ),
                           ),

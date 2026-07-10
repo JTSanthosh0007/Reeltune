@@ -15,13 +15,13 @@ import '../albums/recent_songs_screen.dart';
 import '../notifications/notification_center_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
-  final VoidCallback onNavigateToSearch;
+  final VoidCallback onNavigateToQueue;
   final VoidCallback onNavigateToLibrary;
   final VoidCallback? onMenuPressed;
 
   const HomeScreen({
     super.key,
-    required this.onNavigateToSearch,
+    required this.onNavigateToQueue,
     required this.onNavigateToLibrary,
     this.onMenuPressed,
   });
@@ -101,9 +101,9 @@ class HomeScreen extends ConsumerWidget {
 
               const SizedBox(height: 20),
 
-              // 3. Search Bar Mockup (Triggers tab change)
+              // 3. Queue Bar Mockup (Triggers tab change)
               GestureDetector(
-                onTap: onNavigateToSearch,
+                onTap: onNavigateToQueue,
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -117,18 +117,24 @@ class HomeScreen extends ConsumerWidget {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.search_rounded,
+                        Icons.schedule_rounded,
                         color: isDark ? AppColors.darkSubtitle : AppColors.textTertiary,
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Search your clips or albums',
+                        'Manage your downloads & queue',
                         style: TextStyle(
                           color: isDark
                               ? AppColors.darkSubtitle.withValues(alpha: 0.6)
                               : AppColors.textTertiary,
                           fontSize: 14,
                         ),
+                      ),
+                      const Spacer(),
+                      const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 14,
+                        color: AppColors.primary,
                       ),
                     ],
                   ),

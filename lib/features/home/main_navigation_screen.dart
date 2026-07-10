@@ -5,7 +5,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../albums/albums_screen.dart';
-import '../search/search_screen.dart';
+import '../queue/queue_screen.dart';
+import '../queue/queue_badge_provider.dart';
 import '../settings/settings_screen.dart';
 import '../player/mini_player.dart';
 import '../share_intent/widgets/extraction_bottom_sheet.dart';
@@ -103,33 +104,38 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
           children: [
             // Sub-screen rendering — each tab wrapped in RepaintBoundary
             IndexedStack(
-              index: currentIndex >= 3 ? currentIndex - 1 : currentIndex, // Skip the placeholder at index 2
+              index: currentIndex,
               children: [
                 RepaintBoundary(
                   child: HomeScreen(
-                    onNavigateToSearch: () => _onTabSelected(1),
+                    onNavigateToQueue: () => _onTabSelected(1),
                     onNavigateToLibrary: () => _onTabSelected(3),
                     onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
                   ),
                 ),
-                const RepaintBoundary(child: SearchScreen(isTab: true)),
+                const RepaintBoundary(child: QueueScreen()),
+                const RepaintBoundary(child: ImportSelectionScreen()),
                 const RepaintBoundary(child: AlbumsScreen(isLibrary: true)),
                 const RepaintBoundary(child: SettingsScreen(isTab: true)),
               ],
             ),
 
             // Mini Player floated above the bottom bar
-            Positioned(
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
               left: 0,
               right: 0,
               bottom: showBanner 
-                  ? (bannerHeight + MediaQuery.of(context).padding.bottom + 76.0) 
-                  : (MediaQuery.of(context).padding.bottom + 76.0),
+                  ? (bannerHeight + MediaQuery.of(context).padding.bottom + 92.0) 
+                  : (MediaQuery.of(context).padding.bottom + 92.0),
               child: const MiniPlayer(),
             ),
 
             // Custom Bottom Navigation Bar
-            Positioned(
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
               left: 0,
               right: 0,
               bottom: showBanner 
@@ -138,7 +144,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               child: _CustomBottomNavigationBar(
                 currentIndex: currentIndex,
                 onTabSelected: _onTabSelected,
-                onFABPressed: _showAddClipSheet,
               ),
             ),
 
@@ -670,22 +675,21 @@ class _MainDrawer extends ConsumerWidget {
 }
 
 // --- Custom Bottom Navigation Bar Item ---
-class _CustomBottomNavigationBar extends StatelessWidget {
+class _CustomBottomNavigationBar extends ConsumerWidget {
   final int currentIndex;
   final Function(int) onTabSelected;
-  final VoidCallback onFABPressed;
 
   const _CustomBottomNavigationBar({
     required this.currentIndex,
     required this.onTabSelected,
-    required this.onFABPressed,
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final backgroundColor = isDark ? AppColors.darkSurface : Colors.white;
     final borderDividerColor = isDark ? AppColors.darkBorder : AppColors.surfaceBorder;
+    final pendingCount = ref.watch(queueBadgeProvider);
 
     return Container(
       height: 76,
@@ -714,20 +718,21 @@ class _CustomBottomNavigationBar extends StatelessWidget {
               onTap: () => onTabSelected(0),
             ),
             _NavBarItem(
-              icon: Icons.search_rounded,
-              label: 'Search',
+              icon: Icons.schedule_rounded,
+              label: 'Queue',
               isActive: currentIndex == 1,
               onTap: () => onTabSelected(1),
+              badgeCount: pendingCount,
             ),
             
-            // Center Floating Action Button (+ button)
+            // Center Floating Circle Button (Import tab)
             GestureDetector(
-              onTap: onFABPressed,
+              onTap: () => onTabSelected(2),
               child: Container(
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: AppColors.primary,
+                  color: currentIndex == 2 ? const Color(0xFF19D38A) : AppColors.primary,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
@@ -769,12 +774,14 @@ class _NavBarItem extends StatelessWidget {
   final String label;
   final bool isActive;
   final VoidCallback onTap;
+  final int badgeCount;
 
   const _NavBarItem({
     required this.icon,
     required this.label,
     required this.isActive,
     required this.onTap,
+    this.badgeCount = 0,
   });
 
   @override
@@ -789,15 +796,45 @@ class _NavBarItem extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            color: isActive ? activeColor : inactiveColor,
-            size: 24,
-          ).animate(target: isActive ? 1.0 : 0.0).scale(
-                begin: const Offset(1, 1),
-                end: const Offset(1.15, 1.15),
-                duration: 200.ms,
-              ),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ).animate(target: isActive ? 1.0 : 0.0).scale(
+                    begin: const Offset(1, 1),
+                    end: const Offset(1.15, 1.15),
+                    duration: 200.ms,
+                  ),
+              if (badgeCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF19D38A),
+                      borderRadius: BorderRadius.all(Radius.circular(10)),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '$badgeCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             label,

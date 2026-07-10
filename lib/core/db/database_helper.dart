@@ -9,7 +9,7 @@ final databaseHelperProvider = Provider<DatabaseHelper>((ref) {
 class DatabaseHelper {
   static Database? _database;
   static const String _dbName = 'reeltune.db';
-  static const int _dbVersion = 5;
+  static const int _dbVersion = 7;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -92,6 +92,39 @@ class DatabaseHelper {
       } catch (_) {}
       try {
         await db.execute('ALTER TABLE playlist_clips ADD COLUMN sort_order INTEGER DEFAULT 0');
+      } catch (_) {}
+    }
+    if (oldVersion < 6) {
+      await db.execute('''
+        CREATE TABLE download_queue (
+          id TEXT PRIMARY KEY,
+          url TEXT NOT NULL,
+          title TEXT,
+          artist TEXT,
+          platform TEXT,
+          status TEXT NOT NULL,
+          progress REAL DEFAULT 0.0,
+          created_at INTEGER NOT NULL,
+          error TEXT,
+          priority INTEGER DEFAULT 0
+        )
+      ''');
+    }
+    if (oldVersion < 7) {
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN speed REAL DEFAULT 0.0');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN eta INTEGER DEFAULT 0');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN retries INTEGER DEFAULT 0');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN playlist_id TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN album_id TEXT');
       } catch (_) {}
     }
     // Ensure default fallback album exists
@@ -178,6 +211,26 @@ class DatabaseHelper {
       )
     ''');
     
+    await db.execute('''
+      CREATE TABLE download_queue (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        title TEXT,
+        artist TEXT,
+        platform TEXT,
+        status TEXT NOT NULL,
+        progress REAL DEFAULT 0.0,
+        created_at INTEGER NOT NULL,
+        error TEXT,
+        priority INTEGER DEFAULT 0,
+        speed REAL DEFAULT 0.0,
+        eta INTEGER DEFAULT 0,
+        retries INTEGER DEFAULT 0,
+        playlist_id TEXT,
+        album_id TEXT
+      )
+    ''');
+
     // Ensure default fallback album exists
     await db.execute(
       "INSERT OR IGNORE INTO albums (id, name, created_at, cover_color) "

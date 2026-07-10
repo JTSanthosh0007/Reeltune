@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../../core/network/extraction_service.dart';
-import 'share_intent_provider.dart';
-import 'widgets/extraction_bottom_sheet.dart';
+import '../../core/theme/app_colors.dart';
+import '../queue/queue_provider.dart';
 
 final shareIntentHandlerProvider =
     StateNotifierProvider<ShareIntentHandler, ShareIntentState>((ref) {
@@ -22,8 +24,14 @@ class ShareIntentState {
 class ShareIntentHandler extends StateNotifier<ShareIntentState> {
   final Ref _ref;
   StreamSubscription? _intentSub;
+  static final _localNotifications = FlutterLocalNotificationsPlugin();
 
-  ShareIntentHandler(this._ref) : super(const ShareIntentState());
+  ShareIntentHandler(this._ref) : super(const ShareIntentState()) {
+    const initSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    );
+    _localNotifications.initialize(initSettings);
+  }
 
   void initialize(BuildContext context) {
     if (state.initialized) return;
@@ -32,7 +40,7 @@ class ShareIntentHandler extends StateNotifier<ShareIntentState> {
     // Handle intent when app is already running
     _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen(
       (List<SharedMediaFile> files) {
-        _handleSharedFiles(context, files);
+        _handleSharedFiles(context, files, false);
       },
     );
 
@@ -40,51 +48,72 @@ class ShareIntentHandler extends StateNotifier<ShareIntentState> {
     ReceiveSharingIntent.instance.getInitialMedia().then(
       (List<SharedMediaFile> files) {
         if (files.isNotEmpty) {
-          _handleSharedFiles(context, files);
+          _handleSharedFiles(context, files, true);
           ReceiveSharingIntent.instance.reset();
         }
       },
     );
   }
 
-  void _handleSharedFiles(BuildContext context, List<SharedMediaFile> files) {
+  String? _extractUrl(String text) {
+    final exp = RegExp(r'(https?://[^\s]+)');
+    final match = exp.firstMatch(text);
+    return match?.group(0);
+  }
+
+  Future<void> _showSavedNotification() async {
+    const details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'reeltune_queue_channel',
+        'ReelTune Queue Updates',
+        channelDescription: 'Notifications for ReelTune background queue',
+        importance: Importance.max,
+        priority: Priority.high,
+      ),
+    );
+    await _localNotifications.show(
+      999,
+      'Saved to ReelTune Queue 🎵',
+      'You can continue watching, extraction will be saved.',
+      details,
+    );
+  }
+
+  void _handleSharedFiles(BuildContext context, List<SharedMediaFile> files, bool isInitial) {
     if (files.isEmpty) return;
 
     for (final file in files) {
       String? url;
-      String? localPath;
-      String platform = 'local';
-
       if (file.type == SharedMediaType.url ||
           file.type == SharedMediaType.text) {
-        // Shared a URL (most common for reels)
-        url = file.path;
-        platform = ExtractionService.detectPlatform(url);
-      } else if (file.type == SharedMediaType.video ||
-          file.type == SharedMediaType.file) {
-        // Shared a local video file
-        localPath = file.path;
-        platform = 'local';
+        url = _extractUrl(file.path);
       }
 
-      if (url != null || localPath != null) {
-        // Show the extraction bottom sheet
-        _ref.read(extractionFlowProvider.notifier).startExtraction(
+      if (url != null) {
+        final platform = ExtractionService.detectPlatform(url);
+        
+        // Quietly add to download queue in background
+        _ref.read(queueProvider.notifier).addToQueue(
               url: url,
-              localPath: localPath,
               platform: platform,
             );
 
-        if (context.mounted) {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            isDismissible: false,
-            backgroundColor: Colors.transparent,
-            builder: (_) => const ExtractionBottomSheet(),
-          );
+        if (isInitial) {
+          _showSavedNotification().then((_) {
+            SystemNavigator.pop();
+          });
+        } else {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Saved to ReelTune Queue 🎵'),
+                backgroundColor: AppColors.primary,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         }
-        break; // Handle one at a time
+        break; // Handle first valid URL
       }
     }
   }

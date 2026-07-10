@@ -61,7 +61,7 @@ async function addExtractionJob(jobId, jobData) {
       type: 'exponential',
       delay: 2000,
     },
-    removeOnComplete: true, // Keep Redis clean
+    removeOnComplete: { count: 1000 }, // Keep completed jobs so Flutter app can fetch result
     removeOnFail: false, // Keep in failed queue for debugging
   });
 }

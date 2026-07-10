@@ -10,13 +10,10 @@ const connection = new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379'
 // The Queue instance (used by Web servers to add jobs, and Workers to process them)
 const extractionQueue = new Queue('AudioExtractionQueue', { connection });
 
-// Initialize Worker only if this process is a Worker
-let worker = null;
+// Initialize Worker
+console.log('[Worker] Starting Background Queue Worker in the same process...');
 
-if (process.env.PROCESS_TYPE === 'worker') {
-  console.log('[Worker] Starting Background Queue Worker...');
-  
-  worker = new Worker('AudioExtractionQueue', async (job) => {
+const worker = new Worker('AudioExtractionQueue', async (job) => {
     const { url, deviceId, quality, hostUrl, jobId } = job.data;
     console.log(`[Worker] Processing Job ${jobId} from ${deviceId}`);
 
@@ -54,7 +51,6 @@ if (process.env.PROCESS_TYPE === 'worker') {
   worker.on('failed', (job, err) => {
     console.error(`[Worker] Job ${job.id} has permanently failed:`, err.message);
   });
-}
 
 // Function to add a job with exponential backoff
 async function addExtractionJob(jobId, jobData) {

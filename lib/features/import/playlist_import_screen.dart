@@ -102,7 +102,7 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Created playlist "${playlist.name}" successfully!')),
+        SnackBar(content: Text('Created playlist "${playlist?.name ?? _playlistTitle}" successfully!')),
       );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -147,12 +147,12 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
       while (attempts < 40) {
         attempts++;
         await Future.delayed(const Duration(seconds: 2));
-        final statusRes = await extractionService.getJobStatus(jobId);
+        final statusRes = await extractionService.pollStatus(jobId);
         
-        if (statusRes.status == 'completed') {
+        if (statusRes.status == ExtractionStatus.completed) {
           downloadUrl = statusRes.downloadUrl;
           break;
-        } else if (statusRes.status == 'failed') {
+        } else if (statusRes.status == ExtractionStatus.failed) {
           throw Exception(statusRes.error ?? 'Extraction failed');
         }
       }
@@ -270,9 +270,11 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton.filled(
+                    IconButton(
                       icon: const Icon(Icons.search_rounded, color: Colors.white),
-                      backgroundColor: AppColors.primary,
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                      ),
                       onPressed: _isLoading ? null : _fetchMetadata,
                     ),
                   ],

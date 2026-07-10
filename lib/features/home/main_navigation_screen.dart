@@ -121,8 +121,8 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               left: 0,
               right: 0,
               bottom: showBanner 
-                  ? (50.0 + MediaQuery.of(context).padding.bottom + 76.0 + 8.0) 
-                  : (MediaQuery.of(context).padding.bottom + 76.0 + 8.0),
+                  ? (50.0 + MediaQuery.of(context).padding.bottom + 76.0) 
+                  : (MediaQuery.of(context).padding.bottom + 76.0),
               child: const MiniPlayer(),
             ),
 

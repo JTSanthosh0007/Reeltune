@@ -80,7 +80,7 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
           debugPrint('BannerAd loaded successfully.');
         },
         onAdFailedToLoad: (ad, error) {
-          debugPrint('BannerAd failed to load: $error');
+          debugPrint('BannerAd failed to load (code: ${error.code}): ${error.message}');
           ad.dispose();
           if (!mounted) return;
 
@@ -125,7 +125,7 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
     final placeholderColor = isDark ? AppColors.darkCard : AppColors.gray100;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.surfaceBorder;
 
-    if (_adSize == null) {
+    if (!_isLoaded || _bannerAd == null || _adSize == null) {
       return const SizedBox.shrink();
     }
 
@@ -140,29 +140,7 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
           bottom: BorderSide(color: borderColor, width: 1),
         ),
       ),
-      child: _isLoaded && _bannerAd != null
-          ? AdWidget(ad: _bannerAd!)
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  'Loading Sponsor Ad...',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+      child: AdWidget(ad: _bannerAd!),
     );
   }
 }

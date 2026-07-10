@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -156,12 +157,14 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
 
       // Start polling
       _startPolling(jobId);
-    } on ApiException catch (e) {
+    } on ApiException catch (e, stack) {
+      debugPrintStack(stackTrace: stack, label: 'ApiException in _extractFromUrl');
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: e.message,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrintStack(stackTrace: stack, label: 'Error in _extractFromUrl');
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: 'Failed to start extraction: $e',
@@ -211,7 +214,8 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
             // Keep polling
             break;
         }
-      } catch (e) {
+      } catch (e, stack) {
+        debugPrintStack(stackTrace: stack, label: 'Error in _startPolling');
         // Retry on transient errors
         if (attempts > 3) {
           timer.cancel();
@@ -270,7 +274,8 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
         generatedTitle: title ?? state.generatedTitle,
         verifiedDurationMs: duration?.inMilliseconds,
       );
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrintStack(stackTrace: stack, label: 'Error in _downloadAudio');
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: 'Download/Validation failed: ${e.toString().replaceAll('Exception: ', '')}',
@@ -320,7 +325,8 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
       );
 
       return updatedClip;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrintStack(stackTrace: stack, label: 'Error in saveToAlbum');
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: 'Failed to save clip: $e',

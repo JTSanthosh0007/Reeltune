@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:dio/dio.dart';
@@ -98,7 +99,8 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
         _downloadStates[i] = 'idle';
         _downloadProgress[i] = 0.0;
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrintStack(stackTrace: stack, label: 'Error in _fetchMetadata');
       String errMsg = 'Failed to fetch playlist metadata: $e';
       if (e is ApiException) {
         errMsg = e.message;
@@ -172,13 +174,19 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
       while (attempts < 40) {
         attempts++;
         await Future.delayed(const Duration(seconds: 2));
-        final statusRes = await extractionService.pollStatus(jobId);
-        
-        if (statusRes.status == ExtractionStatus.completed) {
-          downloadUrl = statusRes.downloadUrl;
-          break;
-        } else if (statusRes.status == ExtractionStatus.failed) {
-          throw Exception(statusRes.error ?? 'Extraction failed');
+        try {
+          final statusRes = await extractionService.pollStatus(jobId);
+          if (statusRes.status == ExtractionStatus.completed) {
+            downloadUrl = statusRes.downloadUrl;
+            break;
+          } else if (statusRes.status == ExtractionStatus.failed) {
+            throw Exception(statusRes.error ?? 'Extraction failed');
+          }
+        } catch (e) {
+          if (attempts >= 40) {
+            rethrow;
+          }
+          debugPrint('[Import-Poll] Transient polling error (attempt $attempts): $e');
         }
       }
 
@@ -234,7 +242,8 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
             body: '"$title" imported successfully.',
             type: 'import',
           );
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrintStack(stackTrace: stack, label: 'Error in _downloadTrack');
       setState(() {
         _downloadStates[index] = 'error';
       });

@@ -20,6 +20,7 @@ import 'features/player/audio_handler.dart';
 import 'core/db/album_repository.dart';
 import 'core/db/clip_repository.dart';
 import 'core/db/demo_data_initializer.dart';
+import 'features/notifications/fcm_service.dart';
 import 'main.dart'; // import global audioHandler
 
 class ReelTuneApp extends ConsumerWidget {
@@ -69,6 +70,7 @@ class _AppEntryPointState extends ConsumerState<_AppEntryPoint> {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
           ref.read(shareIntentHandlerProvider.notifier).initialize(context);
+          ref.read(fcmServiceProvider).initialize();
         }
         
         // Initialize AdManager (AdMob setup & consent) in the background

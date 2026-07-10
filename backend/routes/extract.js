@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { extractAudio } = require('../services/extractor');
 const { getSignedDownloadUrl, deleteFile } = require('../services/s3Service');
+const db = require('../services/database');
 
 const router = express.Router();
 
@@ -459,6 +460,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
 
 router.post('/playlist/metadata', handlePlaylistMetadata);
 router.post('/playlist/import', handlePlaylistMetadata);
+router.post('/importPlaylist', handlePlaylistMetadata);
 
 router.post('/playlist/status', (req, res) => {
   const { jobId } = req.body;
@@ -471,6 +473,36 @@ router.get('/playlist/status/:jobId', (req, res) => {
 
 router.get('/playlist/:id', (req, res) => {
   res.json({ id: req.params.id, title: 'Imported Playlist', tracks: [] });
+});
+
+/**
+ * POST /api/devices/register
+ * Store or update user FCM tokens for push notifications
+ */
+router.post('/devices/register', (req, res, next) => {
+  const { deviceId, fcmToken, platform } = req.body;
+
+  if (!deviceId || !fcmToken || !platform) {
+    return res.status(400).json({ error: 'Missing required parameters (deviceId, fcmToken, platform)' });
+  }
+
+  const query = `
+    INSERT INTO devices (device_id, fcm_token, platform, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(device_id) DO UPDATE SET
+      fcm_token = excluded.fcm_token,
+      platform = excluded.platform,
+      updated_at = excluded.updated_at
+  `;
+
+  db.run(query, [deviceId, fcmToken, platform, Date.now()], function (err) {
+    if (err) {
+      console.error('[FCM-Register] Error saving device to database:', err.message);
+      return res.status(500).json({ error: 'Database insertion failed' });
+    }
+    console.log(`[FCM-Register] Device ${deviceId} successfully registered/updated.`);
+    res.json({ success: true, message: 'Device token registered successfully' });
+  });
 });
 
 function parseISO8601Duration(duration) {

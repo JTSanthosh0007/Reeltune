@@ -47,6 +47,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final playerState = ref.watch(playerProvider);
     final albums = ref.watch(albumsProvider).value ?? [];
     Album? album;
@@ -87,132 +88,152 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
           }
         },
         child: Container(
-          margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          height: 78.0, // Fixed premium height
           decoration: BoxDecoration(
-            color: AppColors.getAdaptiveSurfaceCard(context).withValues(alpha: 0.95),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.getAdaptiveSurfaceBorder(context)),
+            color: AppColors.getAdaptiveSurfaceCard(context).withValues(alpha: 0.98),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+            ),
+            border: Border(
+              top: BorderSide(
+                color: AppColors.getAdaptiveSurfaceBorder(context),
+                width: 1.2,
+              ),
+            ),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                blurRadius: 20,
-                offset: const Offset(0, -4),
+                color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08),
+                blurRadius: 16,
+                offset: const Offset(0, -6),
               ),
             ],
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              // Progress bar wrapped in RepaintBoundary to isolate repaints
+              // 4dp Smooth Rounded Progress Bar
               RepaintBoundary(
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: StreamBuilder<Duration>(
-                    stream: (audioHandler as ReelTuneAudioHandler).player.positionStream,
-                    builder: (context, snapshot) {
-                      final position = snapshot.data ?? Duration.zero;
-                      final duration = playerState.duration;
-                      final progress = duration.inMilliseconds > 0
-                          ? position.inMilliseconds / duration.inMilliseconds
-                          : 0.0;
-                      return LinearProgressIndicator(
-                        value: progress.clamp(0.0, 1.0),
-                        backgroundColor: AppColors.surfaceBorder,
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          AppColors.primary,
-                        ),
-                        minHeight: 2.5,
-                      );
-                    },
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                  child: SizedBox(
+                    height: 4.0,
+                    child: StreamBuilder<Duration>(
+                      stream: (audioHandler as ReelTuneAudioHandler).player.positionStream,
+                      builder: (context, snapshot) {
+                        final position = snapshot.data ?? Duration.zero;
+                        final duration = playerState.duration;
+                        final progress = duration.inMilliseconds > 0
+                            ? position.inMilliseconds / duration.inMilliseconds
+                            : 0.0;
+                        return LinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          backgroundColor: isDark ? Colors.white10 : AppColors.surfaceBorder,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            AppColors.primary,
+                          ),
+                          minHeight: 4.0,
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
 
-              // Controls
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-                child: Row(
-                  children: [
-                    // Artwork
-                    CachedArtworkImage(
-                      imagePath: album?.coverImagePath,
-                      size: 40,
-                      borderRadius: BorderRadius.circular(8),
-                      fallbackColor: coverColor,
-                      fallbackIcon: Icons.music_note_rounded,
-                      fallbackIconSize: 20,
-                    ),
-                    const SizedBox(width: 12),
-                    // Clip info
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            playerState.currentClip!.title,
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            playerState.currentClip!.artist != null && playerState.currentClip!.artist!.isNotEmpty && playerState.currentClip!.artist != 'Unknown Artist'
-                                ? playerState.currentClip!.artist!
-                                : '${playerState.currentClip!.platformIcon} Saved Sound',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  fontSize: 11,
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
+              // Content Row
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      // Artwork with 12dp rounded corners and 52dp size
+                      CachedArtworkImage(
+                        imagePath: album?.coverImagePath,
+                        size: 52,
+                        borderRadius: BorderRadius.circular(12),
+                        fallbackColor: coverColor,
+                        fallbackIcon: Icons.music_note_rounded,
+                        fallbackIconSize: 26,
                       ),
-                    ),
+                      const SizedBox(width: 14),
 
-                    // Play/Pause
-                    IconButton(
-                      onPressed: () {
-                        ref.read(playerProvider.notifier).togglePlayPause();
-                      },
-                      icon: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        child: playerState.isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.primary,
-                                ),
-                              )
-                            : Icon(
-                                playerState.isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                color: AppColors.textPrimary,
-                                size: 28,
-                                key: ValueKey(playerState.isPlaying),
-                              ),
+                      // Clip details (truncated on a single line, metadata below)
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              playerState.currentClip!.title,
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: isDark ? Colors.white : AppColors.textPrimary,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              playerState.currentClip!.artist != null &&
+                                      playerState.currentClip!.artist!.isNotEmpty &&
+                                      playerState.currentClip!.artist != 'Unknown Artist'
+                                  ? playerState.currentClip!.artist!
+                                  : '${playerState.currentClip!.platformIcon} Saved Sound',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: isDark ? Colors.white70 : AppColors.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
 
-                    // Close
-                    IconButton(
-                      onPressed: () {
-                        ref.read(playerProvider.notifier).stop();
-                      },
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: AppColors.textTertiary,
-                        size: 20,
+                      // Play/Pause button
+                      IconButton(
+                        onPressed: () {
+                          ref.read(playerProvider.notifier).togglePlayPause();
+                        },
+                        icon: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: playerState.isLoading
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: AppColors.primary,
+                                  ),
+                                )
+                              : Icon(
+                                  playerState.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  color: isDark ? Colors.white : AppColors.textPrimary,
+                                  size: 32,
+                                  key: ValueKey(playerState.isPlaying),
+                                ),
+                        ),
                       ),
-                    ),
-                  ],
+
+                      // Close button (Stop & Dismiss)
+                      IconButton(
+                        onPressed: () {
+                          ref.read(playerProvider.notifier).stop();
+                        },
+                        icon: Icon(
+                          Icons.close_rounded,
+                          color: isDark ? Colors.white54 : AppColors.textTertiary,
+                          size: 22,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

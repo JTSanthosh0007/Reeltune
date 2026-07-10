@@ -11,6 +11,7 @@ Future<AudioHandler> initAudioHandler() async {
       androidNotificationChannelName: 'ReelTune Playback',
       androidNotificationOngoing: true,
       androidShowNotificationBadge: true,
+      androidNotificationIcon: 'drawable/ic_notification',
       notificationColor: Color(0xFF10B981), // Emerald green
     ),
   );
@@ -38,7 +39,9 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
     // Watch position
     _player.positionStream.listen((pos) {
       if (mediaItem.value != null) {
-        playbackState.add(playbackState.value.copyWith(updatePosition: pos));
+        playbackState.add(playbackState.value.copyWith(
+          updatePosition: pos,
+        ));
       }
     });
 
@@ -49,6 +52,14 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
         if (source.tag is MediaItem) {
           mediaItem.add(source.tag as MediaItem);
         }
+      }
+    });
+
+    // Dynamically update active MediaItem duration from player's stream
+    _player.durationStream.listen((duration) {
+      final currentItem = mediaItem.value;
+      if (currentItem != null && duration != null && currentItem.duration != duration) {
+        mediaItem.add(currentItem.copyWith(duration: duration));
       }
     });
 
@@ -327,7 +338,6 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
       controls: [
         MediaControl.skipToPrevious,
         if (_player.playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
         MediaControl.skipToNext,
       ],
       systemActions: const {
@@ -335,7 +345,7 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
         MediaAction.seekForward,
         MediaAction.seekBackward,
       },
-      androidCompactActionIndices: const [0, 1, 3],
+      androidCompactActionIndices: const [0, 1, 2],
       processingState: const {
         ProcessingState.idle: AudioProcessingState.idle,
         ProcessingState.loading: AudioProcessingState.loading,
@@ -347,6 +357,14 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
+      repeatMode: const {
+        LoopMode.off: AudioServiceRepeatMode.none,
+        LoopMode.one: AudioServiceRepeatMode.one,
+        LoopMode.all: AudioServiceRepeatMode.all,
+      }[_player.loopMode] ?? AudioServiceRepeatMode.none,
+      shuffleMode: _player.shuffleModeEnabled
+          ? AudioServiceShuffleMode.all
+          : AudioServiceShuffleMode.none,
       queueIndex: event.currentIndex,
     );
   }

@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../constants.dart';
 
@@ -21,6 +24,30 @@ class ApiClient {
       },
     ));
 
+    // Bypasses SSL certificate verification for environments with invalid/self-signed certs
+    _dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        client.badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+        return client;
+      },
+    );
+
+    // Dynamic Device ID Header Interceptor
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final deviceId = prefs.getString(AppConstants.keyDeviceId);
+          if (deviceId != null) {
+            options.headers['x-device-id'] = deviceId;
+          }
+        } catch (_) {}
+        return handler.next(options);
+      },
+    ));
+
+    // Verbose Network Log Interceptor
     _dio.interceptors.add(LogInterceptor(
       requestBody: true,
       responseBody: true,
@@ -82,35 +109,69 @@ class ApiClient {
   }
 
   ApiException _handleError(DioException e) {
+    final statusCode = e.response?.statusCode;
+    
+    // Check for HTML error responses from Render/Nginx proxies (502, 503, 504, 404)
+    if (statusCode != null) {
+      if (statusCode == 502 || statusCode == 503 || statusCode == 504) {
+        return ApiException('Backend service is booting up or temporarily offline. Please retry in 30 seconds.', statusCode);
+      }
+      if (statusCode == 404) {
+        return ApiException('API endpoint not found on server (404). Check backend route configuration.', statusCode);
+      }
+    }
+
     switch (e.type) {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return ApiException('Connection timed out. Please try again.', e.response?.statusCode);
+        return ApiException('Connection timed out. The backend server is taking too long to respond.', statusCode);
       case DioExceptionType.badResponse:
-        final statusCode = e.response?.statusCode ?? 0;
         final message = _extractErrorMessage(e.response);
         if (statusCode == 429) {
           return ApiException('Rate limit exceeded. Please wait before trying again.', statusCode);
         }
-        if (statusCode >= 500) {
-          return ApiException('Server error. Please try again later.', statusCode);
+        if (statusCode != null && statusCode >= 500) {
+          return ApiException('Server Internal Error ($statusCode): $message', statusCode);
         }
         return ApiException(message, statusCode);
       case DioExceptionType.cancel:
         return ApiException('Request was cancelled.', null);
       case DioExceptionType.connectionError:
-        return ApiException('Backend service is currently offline or unreachable. Please try again later.', null);
+        return ApiException('Backend service is currently offline or unreachable. Please verify the API server is running.', null);
       default:
-        return ApiException('Network connection failed or backend is offline.', null);
+        // Try to inspect the nested exception for SSL or Socket failures
+        final err = e.error;
+        if (err != null) {
+          final errStr = err.toString();
+          if (errStr.contains('HandshakeException') || errStr.contains('CERTIFICATE_VERIFY_FAILED')) {
+            return ApiException('SSL certificate verification failed. Check the backend SSL/TLS certificate configuration.', null);
+          }
+          if (errStr.contains('SocketException')) {
+            return ApiException('Network connection failed (unreachable host or socket error). Verify device connectivity.', null);
+          }
+          return ApiException('Connection failed: $errStr', null);
+        }
+        return ApiException('Network request failed: ${e.message ?? 'Unknown connection error'}', null);
     }
   }
 
   String _extractErrorMessage(Response? response) {
-    if (response?.data is Map) {
-      return (response!.data as Map)['error']?.toString() ??
-          (response.data as Map)['message']?.toString() ??
+    final data = response?.data;
+    if (data is Map) {
+      return data['error']?.toString() ??
+          data['message']?.toString() ??
           'An error occurred';
+    }
+    if (data is String) {
+      if (data.contains('<!DOCTYPE html') || data.contains('<html>')) {
+        final match = RegExp(r'<title>([^<]+)</title>', caseSensitive: false).firstMatch(data);
+        if (match != null) {
+          return 'HTML Error Page: ${match.group(1)}';
+        }
+        return 'Server returned an HTML error page.';
+      }
+      return data.length > 150 ? '${data.substring(0, 150)}...' : data;
     }
     return 'An error occurred';
   }

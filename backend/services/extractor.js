@@ -85,6 +85,9 @@ function downloadWithYtDlp(url, outputPath) {
     let title = 'Audio Clip';
 
     execFile(YTDLP_BIN, infoArgs, { timeout: 30000 }, (infoErr, infoStdout) => {
+      if (infoErr && infoErr.code === 'ENOENT') {
+        return reject(new Error('yt-dlp or python is not installed or not found in system path. Please configure YTDLP_PATH.'));
+      }
       if (!infoErr && infoStdout) {
         title = infoStdout.trim().substring(0, 100); // Limit title length
       }

@@ -58,7 +58,7 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
 
     if (!isSupported) {
       setState(() {
-        _error = 'Unsupported playlist URL.';
+        _error = 'Platform currently not supported.';
         _isLoading = false;
       });
       return;

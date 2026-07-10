@@ -25,12 +25,8 @@ class ApiClient {
       requestBody: true,
       responseBody: true,
       logPrint: (obj) {
-        // Use debugPrint in debug mode for network logging
-        assert(() {
-          // ignore: avoid_print
-          print('[API] $obj');
-          return true;
-        }());
+        // ignore: avoid_print
+        print('[API] $obj');
       },
     ));
   }
@@ -103,8 +99,10 @@ class ApiClient {
         return ApiException(message, statusCode);
       case DioExceptionType.cancel:
         return ApiException('Request was cancelled.', null);
+      case DioExceptionType.connectionError:
+        return ApiException('Backend service is currently offline or unreachable. Please try again later.', null);
       default:
-        return ApiException('Network error. Check your connection.', null);
+        return ApiException('Network connection failed or backend is offline.', null);
     }
   }
 

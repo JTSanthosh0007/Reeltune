@@ -37,6 +37,7 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  DateTime? _lastBackPressTime;
 
   void _onTabSelected(int index) {
     ref.read(navigationIndexProvider.notifier).state = index;
@@ -58,67 +59,100 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final currentIndex = ref.watch(navigationIndexProvider);
     final showBanner = currentIndex != 4 && !isAdFree;
 
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: const _MainDrawer(),
-      // Disable default drawer swipe behavior if player is expanded (managed natively)
-      drawerEnableOpenDragGesture: true,
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.cream,
-      body: Stack(
-        children: [
-          // Sub-screen rendering — each tab wrapped in RepaintBoundary
-          IndexedStack(
-            index: currentIndex >= 3 ? currentIndex - 1 : currentIndex, // Skip the placeholder at index 2
-            children: [
-              RepaintBoundary(
-                child: HomeScreen(
-                  onNavigateToSearch: () => _onTabSelected(1),
-                  onNavigateToLibrary: () => _onTabSelected(3),
-                  onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                ),
-              ),
-              const RepaintBoundary(child: SearchScreen(isTab: true)),
-              const RepaintBoundary(child: AlbumsScreen(isLibrary: true)),
-              const RepaintBoundary(child: SettingsScreen(isTab: true)),
-            ],
-          ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
 
-          // Mini Player floated above the bottom bar
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: showBanner 
-                ? (50.0 + MediaQuery.of(context).padding.bottom + 76.0 + 8.0) 
-                : (MediaQuery.of(context).padding.bottom + 76.0 + 8.0),
-            child: const MiniPlayer(),
-          ),
+        // 1. If drawer is open, close it
+        if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+          _scaffoldKey.currentState?.closeDrawer();
+          return;
+        }
 
-          // Custom Bottom Navigation Bar
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: showBanner 
-                ? (50.0 + MediaQuery.of(context).padding.bottom) 
-                : MediaQuery.of(context).padding.bottom,
-            child: _CustomBottomNavigationBar(
-              currentIndex: currentIndex,
-              onTabSelected: _onTabSelected,
-              onFABPressed: _showAddClipSheet,
+        // 2. If not on the Home tab, go to the Home tab
+        if (currentIndex != 0) {
+          ref.read(navigationIndexProvider.notifier).state = 0;
+          return;
+        }
+
+        // 3. On Home tab: double tap to exit
+        final now = DateTime.now();
+        if (_lastBackPressTime == null ||
+            now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
+          _lastBackPressTime = now;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Press back again to exit'),
+              duration: Duration(seconds: 2),
             ),
-          ),
+          );
+        } else {
+          SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawer: const _MainDrawer(),
+        // Disable default drawer swipe behavior if player is expanded (managed natively)
+        drawerEnableOpenDragGesture: true,
+        backgroundColor: isDark ? AppColors.darkBackground : AppColors.cream,
+        body: Stack(
+          children: [
+            // Sub-screen rendering — each tab wrapped in RepaintBoundary
+            IndexedStack(
+              index: currentIndex >= 3 ? currentIndex - 1 : currentIndex, // Skip the placeholder at index 2
+              children: [
+                RepaintBoundary(
+                  child: HomeScreen(
+                    onNavigateToSearch: () => _onTabSelected(1),
+                    onNavigateToLibrary: () => _onTabSelected(3),
+                    onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  ),
+                ),
+                const RepaintBoundary(child: SearchScreen(isTab: true)),
+                const RepaintBoundary(child: AlbumsScreen(isLibrary: true)),
+                const RepaintBoundary(child: SettingsScreen(isTab: true)),
+              ],
+            ),
 
-          // Banner Ad Widget anchored at the very bottom
-          if (showBanner)
+            // Mini Player floated above the bottom bar
             Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: const BannerAdWidget(),
+              bottom: showBanner 
+                  ? (50.0 + MediaQuery.of(context).padding.bottom + 76.0 + 8.0) 
+                  : (MediaQuery.of(context).padding.bottom + 76.0 + 8.0),
+              child: const MiniPlayer(),
+            ),
+
+            // Custom Bottom Navigation Bar
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: showBanner 
+                  ? (50.0 + MediaQuery.of(context).padding.bottom) 
+                  : MediaQuery.of(context).padding.bottom,
+              child: _CustomBottomNavigationBar(
+                currentIndex: currentIndex,
+                onTabSelected: _onTabSelected,
+                onFABPressed: _showAddClipSheet,
               ),
             ),
-        ],
+
+            // Banner Ad Widget anchored at the very bottom
+            if (showBanner)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SafeArea(
+                  top: false,
+                  child: const BannerAdWidget(),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

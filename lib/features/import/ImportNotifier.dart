@@ -7,6 +7,7 @@ import '../../core/models/clip.dart';
 import '../../core/models/album.dart';
 import '../albums/album_providers.dart';
 import 'LocalAudioRepository.dart';
+import '../notifications/notifications_provider.dart';
 
 enum ImportStatus { idle, scanning, success, failure }
 
@@ -120,10 +121,22 @@ class ImportNotifier extends StateNotifier<ImportState> {
         status: ImportStatus.success,
         scannedCount: importCount,
       );
+
+      _ref.read(notificationsProvider.notifier).addNotification(
+        title: 'Import Completed ✅',
+        body: 'Scanned device and imported $importCount songs successfully.',
+        type: 'import',
+      );
     } catch (e) {
       state = state.copyWith(
         status: ImportStatus.failure,
         errorMessage: e.toString(),
+      );
+
+      _ref.read(notificationsProvider.notifier).addNotification(
+        title: 'Import Failed ❌',
+        body: 'Failed to scan device audio: $e',
+        type: 'error',
       );
     }
   }

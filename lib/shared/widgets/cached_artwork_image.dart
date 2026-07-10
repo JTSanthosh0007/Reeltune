@@ -53,9 +53,6 @@ class CachedArtworkImage extends StatelessWidget {
     }
 
     final file = File(imagePath!);
-    if (!file.existsSync()) {
-      return _buildFallback(color);
-    }
 
     return Image(
       image: FileImage(file),

@@ -147,7 +147,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       state = state.copyWith(
         isPlaying: stateEvent.playing,
-        position: stateEvent.updatePosition,
         isLoading: isLoading,
         speed: stateEvent.speed,
         isLooping: stateEvent.repeatMode == AudioServiceRepeatMode.one,
@@ -206,6 +205,17 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   Future<void> playQueue(List<Clip> clips, int initialIndex) async {
     if (clips.isEmpty) return;
+
+    // Synchronously set targeted clip to update UI and support instant navigation
+    final targetClip = clips[initialIndex];
+    state = state.copyWith(
+      currentClip: targetClip,
+      isLoading: true,
+      isPlaying: false,
+      duration: targetClip.durationMs != null
+          ? Duration(milliseconds: targetClip.durationMs!)
+          : Duration.zero,
+    );
 
     // Smooth volume fade-out/mute
     await _handler.player.setVolume(0.0);
@@ -281,7 +291,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> seekRelative(Duration offset) async {
-    final newPosition = state.position + offset;
+    final newPosition = _handler.player.position + offset;
     final clampedPosition = Duration(
       milliseconds: newPosition.inMilliseconds.clamp(
         0,

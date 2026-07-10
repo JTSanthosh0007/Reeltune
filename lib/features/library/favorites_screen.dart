@@ -8,6 +8,7 @@ import '../../core/models/album.dart';
 import '../../shared/widgets/cached_artwork_image.dart';
 import '../albums/album_providers.dart';
 import '../player/player_provider.dart';
+import '../player/full_player_screen.dart';
 
 class FavoritesScreen extends ConsumerStatefulWidget {
   const FavoritesScreen({super.key});
@@ -274,7 +275,14 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
 
                             return Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: AnimatedContainer(
+                              child: GestureDetector(
+                                onTap: () {
+                                  if (!isCurrent) {
+                                    ref.read(playerProvider.notifier).playQueue(filteredClips, index);
+                                  }
+                                  Navigator.of(context).push(FullPlayerRoute());
+                                },
+                                child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
@@ -402,7 +410,8 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                                   ],
                                 ),
                               ),
-                            );
+                             ),
+                           );
                           },
                           childCount: filteredClips.length,
                         ),

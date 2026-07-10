@@ -9,7 +9,7 @@ final databaseHelperProvider = Provider<DatabaseHelper>((ref) {
 class DatabaseHelper {
   static Database? _database;
   static const String _dbName = 'reeltune.db';
-  static const int _dbVersion = 3;
+  static const int _dbVersion = 4;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -67,6 +67,18 @@ class DatabaseHelper {
           PRIMARY KEY (playlist_id, clip_id),
           FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
           FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE
+        )
+      ''');
+    }
+    if (oldVersion < 4) {
+      await db.execute('''
+        CREATE TABLE notifications (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          is_read INTEGER DEFAULT 0,
+          type TEXT NOT NULL
         )
       ''');
     }
@@ -132,6 +144,17 @@ class DatabaseHelper {
         PRIMARY KEY (playlist_id, clip_id),
         FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
         FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE notifications (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        is_read INTEGER DEFAULT 0,
+        type TEXT NOT NULL
       )
     ''');
   }

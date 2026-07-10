@@ -9,6 +9,7 @@ import '../../core/db/clip_repository.dart';
 import '../../shared/widgets/cached_artwork_image.dart';
 import 'album_providers.dart';
 import '../player/player_provider.dart';
+import '../player/full_player_screen.dart';
 
 final filteredClipsProvider = FutureProvider.family<List<Clip>, String>((ref, filter) async {
   // Re-fetch when albums or recent clips change (reactive updates)
@@ -165,30 +166,37 @@ class FilteredClipsScreen extends ConsumerWidget {
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: isDark ? AppColors.darkCard : Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isCurrent
-                                      ? AppColors.primary
-                                      : (isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
-                                  width: isCurrent ? 1.5 : 1.0,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  CachedArtworkImage(
-                                    imagePath: album?.coverImagePath,
-                                    size: 52,
-                                    borderRadius: BorderRadius.circular(12),
-                                    fallbackColor: coverColor,
-                                    fallbackIcon: Icons.music_note_rounded,
-                                    fallbackIconSize: 24,
+                            child: GestureDetector(
+                              onTap: () {
+                                if (!isCurrent) {
+                                  ref.read(playerProvider.notifier).playQueue(clips, index);
+                                }
+                                Navigator.of(context).push(FullPlayerRoute());
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: isDark ? AppColors.darkCard : Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isCurrent
+                                        ? AppColors.primary
+                                        : (isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
+                                    width: isCurrent ? 1.5 : 1.0,
                                   ),
-                                  const SizedBox(width: 14),
+                                ),
+                                child: Row(
+                                  children: [
+                                    CachedArtworkImage(
+                                      imagePath: album?.coverImagePath,
+                                      size: 52,
+                                      borderRadius: BorderRadius.circular(12),
+                                      fallbackColor: coverColor,
+                                      fallbackIcon: Icons.music_note_rounded,
+                                      fallbackIconSize: 24,
+                                    ),
+                                    const SizedBox(width: 14),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -280,10 +288,11 @@ class FilteredClipsScreen extends ConsumerWidget {
                                                 color: AppColors.primary,
                                                 size: 20,
                                               ),
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           );

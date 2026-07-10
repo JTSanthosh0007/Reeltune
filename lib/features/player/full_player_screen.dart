@@ -47,50 +47,60 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (clip == null) {
-      // Show a styled loading placeholder instead of a blank white screen
-      return Container(
-        height: MediaQuery.of(context).size.height * 0.9,
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkBackground : AppColors.cream,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 44,
-              height: 4.5,
-              margin: const EdgeInsets.only(top: 12),
+      return Dismissible(
+        key: const ValueKey('full_player_screen_loading'),
+        direction: DismissDirection.down,
+        onDismissed: (_) => Navigator.of(context).pop(),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              height: MediaQuery.of(context).size.height * 0.9,
               decoration: BoxDecoration(
-                color: isDark ? AppColors.darkBorder : AppColors.textTertiary,
-                borderRadius: BorderRadius.circular(2.5),
+                color: isDark ? AppColors.darkBackground : AppColors.cream,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 4.5,
+                    margin: const EdgeInsets.only(top: 12),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkBorder : AppColors.textTertiary,
+                      borderRadius: BorderRadius.circular(2.5),
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.music_note_rounded,
+                    size: 80,
+                    color: AppColors.primary.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Loading...',
+                    style: TextStyle(
+                      color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      color: AppColors.primary,
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                  const Spacer(),
+                ],
               ),
             ),
-            const Spacer(),
-            Icon(
-              Icons.music_note_rounded,
-              size: 80,
-              color: AppColors.primary.withValues(alpha: 0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Loading...',
-              style: TextStyle(
-                color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 24),
-            const SizedBox(
-              width: 24,
-              height: 24,
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 2.5,
-              ),
-            ),
-            const Spacer(),
-          ],
+          ),
         ),
       );
     }
@@ -118,21 +128,29 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
         ? AppColors.parseHexColor(album.coverColor)
         : AppColors.primary;
 
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkBackground : AppColors.cream,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        border: Border(
-          top: BorderSide(
-            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
-            width: 1.5,
-          ),
-        ),
-      ),
-      child: Column(
-        children: [
-          // 1. Drag handle bar
+    return Dismissible(
+      key: const ValueKey('full_player_screen_loaded'),
+      direction: DismissDirection.down,
+      onDismissed: (_) => Navigator.of(context).pop(),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            height: MediaQuery.of(context).size.height * 0.9,
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkBackground : AppColors.cream,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+              border: Border(
+                top: BorderSide(
+                  color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                  width: 1.5,
+                ),
+              ),
+            ),
+            child: Column(
+              children: [
+                // 1. Drag handle bar
           Container(
             width: 44,
             height: 4.5,
@@ -518,7 +536,10 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
           ),
         ],
       ),
-    );
+    ),
+  ),
+),
+);
   }
 
   /// Builds the album artwork with proper error handling and fallback
@@ -807,4 +828,25 @@ final playerClipFavoriteProvider = FutureProvider.family<bool, String>((ref, cli
   final clip = await ref.read(clipRepositoryProvider).getClip(clipId);
   return clip?.isFavorite ?? false;
 });
+
+class FullPlayerRoute extends PageRouteBuilder {
+  FullPlayerRoute()
+      : super(
+          pageBuilder: (context, animation, secondaryAnimation) => const FullPlayerScreen(),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            const begin = Offset(0.0, 1.0);
+            const end = Offset.zero;
+            const curve = Curves.easeOutCubic;
+            var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 300),
+          reverseTransitionDuration: const Duration(milliseconds: 250),
+          opaque: false,
+          barrierColor: Colors.black.withValues(alpha: 0.5),
+        );
+}
 

@@ -7,6 +7,8 @@ import '../../shared/widgets/cached_artwork_image.dart';
 import '../albums/album_providers.dart';
 import 'player_provider.dart';
 import 'full_player_screen.dart';
+import '../../main.dart'; // import global audioHandler
+import 'audio_handler.dart'; // import ReelTuneAudioHandler
 
 class MiniPlayer extends ConsumerStatefulWidget {
   const MiniPlayer({super.key});
@@ -73,22 +75,12 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
       position: _slideAnimation,
       child: GestureDetector(
         onTap: () {
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => const FullPlayerScreen(),
-          );
+          Navigator.of(context).push(FullPlayerRoute());
         },
         onVerticalDragEnd: (details) {
           if (details.primaryVelocity != null && details.primaryVelocity! < -200) {
             // Swipe Up -> Open Full Player
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.transparent,
-              builder: (_) => const FullPlayerScreen(),
-            );
+            Navigator.of(context).push(FullPlayerRoute());
           } else if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
             // Swipe Down -> Dismiss Mini Player (Stop playback & clear state)
             ref.read(playerProvider.notifier).stop();
@@ -115,13 +107,23 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
               RepaintBoundary(
                 child: ClipRRect(
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                  child: LinearProgressIndicator(
-                    value: playerState.progress,
-                    backgroundColor: AppColors.surfaceBorder,
-                    valueColor: const AlwaysStoppedAnimation<Color>(
-                      AppColors.primary,
-                    ),
-                    minHeight: 2.5,
+                  child: StreamBuilder<Duration>(
+                    stream: (audioHandler as ReelTuneAudioHandler).player.positionStream,
+                    builder: (context, snapshot) {
+                      final position = snapshot.data ?? Duration.zero;
+                      final duration = playerState.duration;
+                      final progress = duration.inMilliseconds > 0
+                          ? position.inMilliseconds / duration.inMilliseconds
+                          : 0.0;
+                      return LinearProgressIndicator(
+                        value: progress.clamp(0.0, 1.0),
+                        backgroundColor: AppColors.surfaceBorder,
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.primary,
+                        ),
+                        minHeight: 2.5,
+                      );
+                    },
                   ),
                 ),
               ),

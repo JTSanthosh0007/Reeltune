@@ -227,7 +227,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                                 onTap: () {
                                                   Navigator.of(context).push(
                                                     MaterialPageRoute(
-                                                      builder: (_) => AlbumDetailScreen(album: album),
+                                                      builder: (_) => AlbumDetailScreen(albumId: album.id),
                                                     ),
                                                   );
                                                 },

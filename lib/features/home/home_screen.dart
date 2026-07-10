@@ -12,6 +12,7 @@ import '../albums/album_detail_screen.dart';
 import '../player/player_provider.dart';
 import '../player/full_player_screen.dart';
 import '../albums/recent_songs_screen.dart';
+import '../notifications/notification_center_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   final VoidCallback onNavigateToSearch;
@@ -60,7 +61,13 @@ class HomeScreen extends ConsumerWidget {
                     ).animate().fadeIn(duration: 400.ms),
                     IconButton(
                       icon: const Icon(Icons.notifications_none_rounded),
-                      onPressed: () {},
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationCenterScreen(),
+                          ),
+                        );
+                      },
                       color: isDark ? Colors.white : AppColors.textPrimary,
                     ),
                   ],

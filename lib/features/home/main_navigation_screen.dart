@@ -85,30 +85,37 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: showBanner ? 142 : 92, // position above banner or custom bottom bar
+            bottom: showBanner 
+                ? (50.0 + MediaQuery.of(context).padding.bottom + 76.0 + 8.0) 
+                : (MediaQuery.of(context).padding.bottom + 76.0 + 8.0),
             child: const MiniPlayer(),
           ),
-
-          // Banner Ad Widget
-          if (showBanner)
-            const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 92,
-              child: BannerAdWidget(),
-            ),
 
           // Custom Bottom Navigation Bar
           Positioned(
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: showBanner 
+                ? (50.0 + MediaQuery.of(context).padding.bottom) 
+                : MediaQuery.of(context).padding.bottom,
             child: _CustomBottomNavigationBar(
               currentIndex: currentIndex,
               onTabSelected: _onTabSelected,
               onFABPressed: _showAddClipSheet,
             ),
           ),
+
+          // Banner Ad Widget anchored at the very bottom
+          if (showBanner)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: const BannerAdWidget(),
+              ),
+            ),
         ],
       ),
     );

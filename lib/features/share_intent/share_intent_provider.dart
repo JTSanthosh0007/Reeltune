@@ -11,6 +11,7 @@ import '../../core/network/api_client.dart';
 import '../../core/network/extraction_service.dart';
 import '../../core/storage/file_storage_service.dart';
 import '../albums/album_providers.dart';
+import '../notifications/notifications_provider.dart';
 
 // --- Extraction flow state ---
 enum ExtractionStep {
@@ -294,12 +295,26 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
       _ref.read(albumsProvider.notifier).refresh();
 
       state = state.copyWith(step: ExtractionStep.done);
+
+      _ref.read(notificationsProvider.notifier).addNotification(
+        title: 'Extraction Completed 🎉',
+        body: 'Successfully extracted and saved "${clip.title}" to album.',
+        type: 'extraction',
+      );
+
       return updatedClip;
     } catch (e) {
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: 'Failed to save clip: $e',
       );
+
+      _ref.read(notificationsProvider.notifier).addNotification(
+        title: 'Extraction Failed ❌',
+        body: 'Failed to save extracted track: $e',
+        type: 'error',
+      );
+
       return null;
     }
   }

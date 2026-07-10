@@ -62,19 +62,17 @@ class _AppEntryPointState extends ConsumerState<_AppEntryPoint> {
       // 1. Initialize environment configuration
       await EnvConfig.initialize();
 
-      // 2. Initialize Audio Handler and AdManager concurrently in the background
-      final results = await Future.wait<dynamic>([
-        AdManager.initialize(),
-        initAudioHandler(),
-      ]);
-
-      audioHandler = results[1] as AudioHandler;
+      // 2. Initialize Audio Handler in the background (critical for boot)
+      audioHandler = await initAudioHandler();
 
       // 3. Post-frame initialization (Intent listener, preloading ads, demo data)
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
           ref.read(shareIntentHandlerProvider.notifier).initialize(context);
         }
+        
+        // Initialize AdManager (AdMob setup & consent) in the background
+        await AdManager.initialize();
         
         // Trigger ad service preloading
         ref.read(appOpenServiceProvider);

@@ -13,6 +13,110 @@ if (process.env.FFMPEG_PATH) {
 
 const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
 
+class ConcurrencyPool {
+  constructor(maxConcurrent) {
+    this.maxConcurrent = maxConcurrent;
+    this.active = 0;
+    this.queue = [];
+  }
+
+  async run(fn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ fn, resolve, reject });
+      this._next();
+    });
+  }
+
+  _next() {
+    if (this.active >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+    const { fn, resolve, reject } = this.queue.shift();
+    this.active++;
+    fn().then(resolve).catch(reject).finally(() => {
+      this.active--;
+      this._next();
+    });
+  }
+}
+
+const searchPool = new ConcurrencyPool(parseInt(process.env.SEARCH_POOL_CONCURRENCY || '6', 10));
+const youtubeSearchCache = new Map();
+
+async function searchYoutube(query) {
+  const cached = youtubeSearchCache.get(query);
+  if (cached) {
+    console.log(`[YT-Search] Cache hit for query: "${query}" -> ${cached}`);
+    return cached;
+  }
+
+  console.log(`[YT-Search] Fetching search results for query: "${query}"`);
+  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`YouTube search HTTP error ${response.status}`);
+  }
+
+  const html = await response.text();
+  
+  const matches = [...html.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)];
+  if (matches.length > 0) {
+    const videoId = matches[0][1];
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    youtubeSearchCache.set(query, watchUrl);
+    return watchUrl;
+  }
+
+  const watchMatch = html.match(/\/watch\?v=([a-zA-Z0-9_-]{11})/);
+  if (watchMatch) {
+    const videoId = watchMatch[1];
+    const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    youtubeSearchCache.set(query, watchUrl);
+    return watchUrl;
+  }
+
+  throw new Error(`No search results found for query: "${query}"`);
+}
+
+const activeProcesses = new Map();
+
+function registerJobTask(jobId, task) {
+  if (!activeProcesses.has(jobId)) {
+    activeProcesses.set(jobId, new Set());
+  }
+  activeProcesses.get(jobId).add(task);
+}
+
+function unregisterJobTask(jobId, task) {
+  const set = activeProcesses.get(jobId);
+  if (set) {
+    set.delete(task);
+    if (set.size === 0) activeProcesses.delete(jobId);
+  }
+}
+
+function killProcesses(jobId) {
+  const set = activeProcesses.get(jobId);
+  if (set) {
+    console.log(`[Cleaner] Killing active tasks for job ${jobId}`);
+    for (const task of set) {
+      try {
+        if (typeof task.kill === 'function') {
+          task.kill('SIGKILL');
+        }
+      } catch (e) {}
+    }
+    activeProcesses.delete(jobId);
+  }
+}
+
 /**
  * Extract audio from a video URL using yt-dlp + ffmpeg
  *
@@ -35,49 +139,76 @@ async function extractAudio(url, jobId, quality = 'high') {
   // Ensure temp directory exists
   fs.mkdirSync(tempDir, { recursive: true });
 
-  try {
-    let title = 'Audio Clip';
-    let s3Key = '';
+  const timeoutMs = 120000;
+  let timeoutId;
 
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      killProcesses(jobId);
+      reject(new Error(`Extraction timed out after ${timeoutMs / 1000} seconds`));
+    }, timeoutMs);
+  });
+
+  const extractionPromise = (async () => {
     try {
-      // Step 1: Get video info + download with yt-dlp
-      console.log(`[Extractor] Downloading video from: ${url}`);
-      const downloadResult = await downloadWithYtDlp(url, videoPath);
-      title = downloadResult.title || title;
-      
-      // Step 2: Extract audio with ffmpeg
-      console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadResult.downloadedPath}`);
-      await extractWithFfmpeg(downloadResult.downloadedPath, audioPath, quality);
-      
-    } catch (err) {
-      if (err.message.includes('requires sign-in') || err.message.includes('bot challenge')) {
-        console.warn(`[Extractor] yt-dlp blocked by YouTube. Falling back to Cobalt API...`);
-        // Fallback to Cobalt API
-        title = await downloadWithCobalt(url, audioPath);
-      } else {
-        throw err;
+      let title = 'Audio Clip';
+      let s3Key = '';
+
+      if (url.startsWith('ytsearch:')) {
+        const query = url.substring(9);
+        console.log(`[Extractor] Job ${jobId} resolving ytsearch query: "${query}"`);
+        url = await searchPool.run(() => searchYoutube(query));
+        console.log(`[Extractor] Job ${jobId} resolved query to: ${url}`);
+      }
+
+      try {
+        // Step 1: Download with yt-dlp
+        console.log(`[Extractor] Downloading video from: ${url}`);
+        const downloadResult = await downloadWithYtDlp(url, videoPath, jobId);
+        title = downloadResult.title || title;
+        
+        // Step 2: Extract audio with ffmpeg
+        console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadResult.downloadedPath}`);
+        await extractWithFfmpeg(downloadResult.downloadedPath, audioPath, quality, jobId);
+        
+      } catch (err) {
+        if (err.message.includes('requires sign-in') || err.message.includes('bot challenge') || err.message.includes('Sign in to confirm')) {
+          console.warn(`[Extractor] yt-dlp blocked by YouTube. Falling back to Cobalt API...`);
+          title = await downloadWithCobalt(url, audioPath);
+        } else {
+          throw err;
+        }
+      }
+
+      // Step 3: Upload to S3
+      console.log(`[Extractor] Uploading to S3...`);
+      s3Key = `extractions/${jobId}.mp3`;
+      await uploadFile(audioPath, s3Key);
+
+      console.log(`[Extractor] Extraction complete for job ${jobId}`);
+
+      return {
+        s3Key,
+        title: title || `Audio Clip`,
+      };
+    } finally {
+      // Clean up temp files
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        console.log(`[Extractor] Cleaned up temp files for job ${jobId}`);
+      } catch (cleanupErr) {
+        console.error(`[Extractor] Cleanup warning:`, cleanupErr.message);
       }
     }
+  })();
 
-    // Step 3: Upload to S3
-    console.log(`[Extractor] Uploading to S3...`);
-    s3Key = `extractions/${jobId}.mp3`;
-    await uploadFile(audioPath, s3Key);
-
-    console.log(`[Extractor] Extraction complete for job ${jobId}`);
-
-    return {
-      s3Key,
-      title: title || `Audio Clip`,
-    };
-  } finally {
-    // Step 4: Clean up temp files
-    try {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-      console.log(`[Extractor] Cleaned up temp files for job ${jobId}`);
-    } catch (cleanupErr) {
-      console.error(`[Extractor] Cleanup warning:`, cleanupErr.message);
-    }
+  try {
+    const result = await Promise.race([extractionPromise, timeoutPromise]);
+    clearTimeout(timeoutId);
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw err;
   }
 }
 
@@ -85,7 +216,7 @@ async function extractAudio(url, jobId, quality = 'high') {
  * Download video using yt-dlp
  * Returns the title and path to the downloaded file
  */
-function downloadWithYtDlp(url, outputPath) {
+function downloadWithYtDlp(url, outputPath, jobId) {
   return new Promise((resolve, reject) => {
     // First, get the title (with rate limit bypass flags)
     const infoArgs = [
@@ -101,7 +232,9 @@ function downloadWithYtDlp(url, outputPath) {
 
     let title = 'Audio Clip';
 
-    execFile(YTDLP_BIN, infoArgs, { timeout: 30000 }, (infoErr, infoStdout) => {
+    const infoProc = execFile(YTDLP_BIN, infoArgs, { timeout: 30000 }, (infoErr, infoStdout) => {
+      unregisterJobTask(jobId, infoProc);
+      
       if (infoErr && infoErr.code === 'ENOENT') {
         return reject(new Error('yt-dlp or python is not installed or not found in system path. Please configure YTDLP_PATH.'));
       }
@@ -128,7 +261,9 @@ function downloadWithYtDlp(url, outputPath) {
         '--force-ipv4',
       ];
 
-      execFile(YTDLP_BIN, downloadArgs, { timeout: 120000 }, (err, stdout, stderr) => {
+      const downloadProc = execFile(YTDLP_BIN, downloadArgs, { timeout: 90000 }, (err, stdout, stderr) => {
+        unregisterJobTask(jobId, downloadProc);
+
         if (err) {
           const errOutput = stderr || err.message || '';
           console.error(`[yt-dlp] Error:`, errOutput);
@@ -150,7 +285,7 @@ function downloadWithYtDlp(url, outputPath) {
             return reject(new Error('Unsupported or invalid Reel URL.'));
           }
           
-          return reject(new Error(`Download failed: ${errOutput}`));
+          return reject(new Error(`Download failed: ${errOutput.substring(0, 150)}`));
         }
 
         // Find the downloaded file (extension may vary)
@@ -170,7 +305,11 @@ function downloadWithYtDlp(url, outputPath) {
           downloadedPath: path.join(dir, downloadedFile),
         });
       });
+
+      registerJobTask(jobId, downloadProc);
     });
+
+    registerJobTask(jobId, infoProc);
   });
 }
 
@@ -178,7 +317,7 @@ function downloadWithYtDlp(url, outputPath) {
  * Extract audio from a video file using ffmpeg
  * Converts to MP3 at specified bitrate
  */
-function extractWithFfmpeg(inputPath, outputPath, quality) {
+function extractWithFfmpeg(inputPath, outputPath, quality, jobId) {
   let bitrate = '192'; // Default High
   if (quality === 'low') {
     bitrate = '96';
@@ -191,7 +330,7 @@ function extractWithFfmpeg(inputPath, outputPath, quality) {
   }
 
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath)
       .noVideo()
       .audioCodec('libmp3lame')
       .audioBitrate(bitrate)
@@ -199,18 +338,22 @@ function extractWithFfmpeg(inputPath, outputPath, quality) {
       .audioFrequency(44100)
       .output(outputPath)
       .on('end', () => {
+        unregisterJobTask(jobId, command);
         console.log(`[ffmpeg] Audio extraction complete: ${outputPath} (${bitrate}kbps)`);
         resolve(outputPath);
       })
       .on('error', (err) => {
+        unregisterJobTask(jobId, command);
         console.error(`[ffmpeg] Error:`, err.message);
         if (err.message.includes('Cannot find ffmpeg') || err.message.includes('FFmpeg/FFprobe not found')) {
           reject(new Error('FFmpeg is not installed or not found in system path. Please configure FFMPEG_PATH.'));
         } else {
           reject(new Error(`FFmpeg audio extraction failed: ${err.message}`));
         }
-      })
-      .run();
+      });
+
+    registerJobTask(jobId, command);
+    command.run();
   });
 }
 

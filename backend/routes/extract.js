@@ -167,7 +167,23 @@ const handlePlaylistMetadata = async (req, res, next) => {
 
     const resolvedUrl = await resolveRedirect(url);
 
-    if (resolvedUrl.includes('spotify.com')) {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(resolvedUrl);
+    } catch (e) {
+      return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Malformed URL structure' });
+    }
+
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const pathname = parsedUrl.pathname;
+
+    const isSpotify = hostname.includes('spotify.com') || hostname.includes('spotify.link');
+    const isYoutube = hostname.includes('youtube.com') || hostname.includes('youtu.be') || hostname.includes('youtube-nocookie.com');
+    const isApple = hostname.includes('apple.com');
+    const isJioSaavn = hostname.includes('jiosaavn.com') || hostname.includes('jiosaav.in');
+    const isM3U = pathname.endsWith('.m3u') || pathname.endsWith('.m3u8') || pathname.includes('/m3u');
+
+    if (isSpotify) {
       const match = resolvedUrl.match(/playlist\/([a-zA-Z0-9]+)/) || resolvedUrl.match(/album\/([a-zA-Z0-9]+)/);
       if (!match) {
         return res.status(400).json({ success: false, error_code: 'INVALID_SPOTIFY_URL', message: 'Invalid Spotify playlist or album URL' });
@@ -239,7 +255,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
         console.error('[Spotify] Scraping error:', err.message);
         return res.status(500).json({ success: false, error_code: 'SPOTIFY_PARSE_ERROR', message: 'Failed to parse Spotify playlist' });
       }
-    } else if (resolvedUrl.includes('youtube.com') || resolvedUrl.includes('youtu.be')) {
+    } else if (isYoutube) {
       const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
       const { execFile } = require('child_process');
       
@@ -290,7 +306,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
           return res.status(500).json({ success: false, error_code: 'PLAYLIST_PARSE_ERROR', message: 'Failed to parse playlist JSON' });
         }
       });
-    } else if (resolvedUrl.includes('music.apple.com')) {
+    } else if (isApple) {
       const response = await fetch(resolvedUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -355,7 +371,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
         coverUrl,
         tracks,
       });
-    } else if (resolvedUrl.includes('jiosaavn.com')) {
+    } else if (isJioSaavn) {
       const response = await fetch(resolvedUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -436,7 +452,7 @@ const handlePlaylistMetadata = async (req, res, next) => {
         coverUrl,
         tracks,
       });
-    } else if (resolvedUrl.endsWith('.m3u') || resolvedUrl.endsWith('.m3u8') || resolvedUrl.includes('/m3u')) {
+    } else if (isM3U) {
       const response = await fetch(resolvedUrl);
       if (!response.ok) {
         return res.status(500).json({ error: 'Failed to fetch M3U playlist file' });

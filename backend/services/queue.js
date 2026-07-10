@@ -41,7 +41,9 @@ const worker = new Worker('AudioExtractionQueue', async (job) => {
     }
   }, { 
     connection,
-    concurrency: parseInt(process.env.WORKER_CONCURRENCY || '5', 10), // Limit concurrent yt-dlp per worker
+    concurrency: parseInt(process.env.WORKER_CONCURRENCY || '6', 10), // Limit concurrent downloads (max 6)
+    lockDuration: 60000, // 60 seconds lock duration
+    stalledInterval: 15000, // check for stalled jobs every 15 seconds
   });
 
   worker.on('completed', async (job, returnvalue) => {
@@ -83,6 +85,14 @@ async function getJobStatus(jobId) {
     error: failedReason,
   };
 }
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('[Process] Uncaught Exception:', error);
+});
 
 module.exports = {
   extractionQueue,

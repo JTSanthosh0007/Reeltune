@@ -306,7 +306,6 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
         }
       }
     });
-
     for (int i = 0; i < _tracks.length; i++) {
       if (_downloadStates[i] == 'queued') {
         await _downloadTrack(i);
@@ -324,271 +323,424 @@ class _PlaylistImportScreenState extends ConsumerState<PlaylistImportScreen> {
     switch (widget.platform) {
       case 'spotify':
         screenTitle = 'Import Spotify';
-        hintText = 'Paste Spotify playlist or album URL...';
+        hintText = 'Paste Spotify URL...';
         break;
       case 'youtube':
         screenTitle = 'Import YouTube Music';
-        hintText = 'Paste YouTube/YT Music playlist URL...';
+        hintText = 'Paste YouTube URL...';
         break;
       case 'apple':
         screenTitle = 'Import Apple Music';
-        hintText = 'Paste Apple Music playlist URL...';
+        hintText = 'Paste Apple Music URL...';
         break;
       case 'jiosaavn':
         screenTitle = 'Import JioSaavn';
-        hintText = 'Paste JioSaavn playlist URL...';
+        hintText = 'Paste JioSaavn URL...';
         break;
       case 'm3u':
         screenTitle = 'Import M3U Playlist';
-        hintText = 'Paste M3U playlist file URL...';
+        hintText = 'Paste M3U URL...';
         break;
     }
 
     return Scaffold(
+      backgroundColor: isDark ? AppColors.darkBackground : AppColors.cream,
       appBar: AppBar(
-        title: Text(screenTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: true,
+        iconTheme: IconThemeData(color: isDark ? Colors.white : AppColors.textPrimary),
+        title: Text(
+          screenTitle,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            color: isDark ? Colors.white : AppColors.textPrimary,
+          ),
+        ),
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: AppColors.getAdaptiveBackgroundGradient(context),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 12),
-                
-                // URL input bar
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _urlController,
-                        style: TextStyle(color: isDark ? Colors.white : AppColors.textPrimary),
-                        decoration: InputDecoration(
-                          hintText: hintText,
-                          prefixIcon: const Icon(Icons.link_rounded, color: AppColors.primary),
-                          filled: true,
-                          fillColor: isDark ? AppColors.darkCard : Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.search_rounded, color: Colors.white),
-                      style: IconButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                      ),
-                      onPressed: _isLoading ? null : _fetchMetadata,
-                    ),
-                  ],
-                ),
-                
-                const SizedBox(height: 16),
-                
-                if (_isLoading)
-                  const Expanded(
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircularProgressIndicator(color: AppColors.primary),
-                          SizedBox(height: 16),
-                          Text('Fetching playlist info and entries...'),
-                        ],
-                      ),
-                    ),
-                  )
-                else if (_error != null)
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        _error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppColors.error),
-                      ),
-                    ),
-                  )
-                else if (_playlistTitle != null) ...[
-                  // Playlist Metadata Top Card
-                  Card(
-                    color: isDark ? AppColors.darkCard : Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_playlistCoverUrl != null && _playlistCoverUrl!.isNotEmpty)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                _playlistCoverUrl!,
-                                width: 80,
-                                height: 80,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
-                                  width: 80,
-                                  height: 80,
-                                  color: AppColors.primary.withValues(alpha: 0.1),
-                                  child: const Icon(Icons.playlist_play_rounded, color: AppColors.primary, size: 40),
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              width: 80,
-                              height: 80,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.playlist_play_rounded, color: AppColors.primary, size: 40),
-                            ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _playlistTitle!,
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                if (_playlistDesc != null && _playlistDesc!.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _playlistDesc!,
-                                    style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    ElevatedButton(
-                                      onPressed: _createdPlaylist == null ? _importPlaylistStructure : null,
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                                        foregroundColor: AppColors.primary,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                      child: Text(_createdPlaylist != null ? 'Imported ✔' : 'Import Structure'),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    ElevatedButton.icon(
-                                      onPressed: _downloadAll,
-                                      icon: const Icon(Icons.download_rounded, size: 16),
-                                      label: const Text('Download All'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.primary,
-                                        foregroundColor: Colors.white,
-                                        elevation: 0,
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Tracks List
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _tracks.length,
-                      itemBuilder: (context, index) {
-                        final track = _tracks[index];
-                        final state = _downloadStates[index] ?? 'idle';
-                        final progress = _downloadProgress[index] ?? 0.0;
-
-                        return Card(
-                          color: isDark ? AppColors.darkCard : Colors.white,
-                          margin: const EdgeInsets.only(bottom: 8),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
-                          ),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                              child: Text('${index + 1}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
-                            ),
-                            title: Text(track['title'] ?? 'Unknown Title', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(track['artist'] ?? 'Unknown Artist'),
-                            trailing: SizedBox(
-                              width: 80,
-                              child: Align(
-                                alignment: Alignment.centerRight,
-                                child: state == 'downloading'
-                                    ? SizedBox(
-                                        width: 24,
-                                        height: 24,
-                                        child: CircularProgressIndicator(
-                                          value: progress > 0 ? progress : null,
-                                          color: AppColors.primary,
-                                          strokeWidth: 2.5,
-                                        ),
-                                      )
-                                    : state == 'queued'
-                                        ? const SizedBox(
-                                            width: 24,
-                                            height: 24,
-                                            child: CircularProgressIndicator(
-                                              color: AppColors.primary,
-                                              strokeWidth: 1.5,
-                                            ),
-                                          )
-                                        : state == 'success'
-                                            ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
-                                            : state == 'error'
-                                                ? const Icon(Icons.error_outline_rounded, color: AppColors.error)
-                                                : IconButton(
-                                                    icon: const Icon(Icons.download_rounded, color: AppColors.primary),
-                                                    onPressed: () => _downloadTrack(index),
-                                                  ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ] else
-                  const Expanded(
-                    child: Center(
-                      child: Text(
-                        'Paste a Spotify/YouTube playlist URL above to scan and fetch tracks.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.textTertiary),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _buildContent(isDark, hintText),
           ),
         ),
       ),
     );
   }
+
+  Widget _buildContent(bool isDark, String hintText) {
+    if (_isLoading) {
+      return Center(
+        key: const ValueKey('loading'),
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: AppColors.primary, strokeWidth: 3),
+              const SizedBox(height: 24),
+              Text(
+                'Fetching playlist info and entries...',
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        key: const ValueKey('error'),
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 48),
+              const SizedBox(height: 24),
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isDark ? Colors.white70 : AppColors.textSecondary,
+                  fontSize: 15,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _error = null;
+                  });
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Try Again', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_playlistTitle != null) {
+      return Column(
+        key: const ValueKey('playlist_view'),
+        children: [
+          // Playlist Card (styled like Bloomee)
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkCard.withValues(alpha: 0.6) : Colors.white.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder.withValues(alpha: 0.5) : AppColors.surfaceBorder.withValues(alpha: 0.5),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: (_playlistCoverUrl != null && _playlistCoverUrl!.isNotEmpty)
+                            ? Image.network(
+                                _playlistCoverUrl!,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _playlistPlaceholder(),
+                              )
+                            : _playlistPlaceholder(),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _playlistTitle!,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: isDark ? Colors.white : AppColors.textPrimary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (_playlistDesc != null && _playlistDesc!.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              _playlistDesc!,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: _createdPlaylist == null ? _importPlaylistStructure : null,
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(
+                                      color: isDark
+                                          ? AppColors.darkBorder.withValues(alpha: 0.5)
+                                          : AppColors.surfaceBorder.withValues(alpha: 0.5),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  child: Text(
+                                    _createdPlaylist != null ? 'Imported ✔' : 'Import structure',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.white : AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: FilledButton.icon(
+                                  onPressed: _downloadAll,
+                                  icon: const Icon(Icons.download_rounded, size: 16, color: Colors.white),
+                                  label: const Text(
+                                    'Download All',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    elevation: 0,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          
+          // Tracks List (styled like Bloomee)
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: _tracks.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final track = _tracks[index];
+                final state = _downloadStates[index] ?? 'idle';
+                final progress = _downloadProgress[index] ?? 0.0;
+
+                return Container(
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.darkCard.withValues(alpha: 0.5)
+                        : Colors.white.withValues(alpha: 0.8),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isDark
+                          ? AppColors.darkBorder.withValues(alpha: 0.4)
+                          : AppColors.surfaceBorder.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    title: Text(
+                      track['title'] ?? 'Unknown Title',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : AppColors.textPrimary,
+                      ),
+                    ),
+                    subtitle: Text(
+                      track['artist'] ?? 'Unknown Artist',
+                      style: TextStyle(
+                        color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                      ),
+                    ),
+                    trailing: SizedBox(
+                      width: 80,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: state == 'downloading'
+                            ? SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  value: progress > 0 ? progress : null,
+                                  color: AppColors.primary,
+                                  strokeWidth: 2.5,
+                                ),
+                              )
+                            : state == 'queued'
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: AppColors.primary,
+                                      strokeWidth: 1.5,
+                                    ),
+                                  )
+                                : state == 'success'
+                                    ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
+                                    : state == 'error'
+                                        ? const Icon(Icons.error_outline_rounded, color: AppColors.error)
+                                        : IconButton(
+                                            icon: const Icon(Icons.download_rounded, color: AppColors.primary),
+                                            onPressed: () => _downloadTrack(index),
+                                          ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Default: IDLE Input Screen (identical to Bloomee input view)
+    return SingleChildScrollView(
+      key: const ValueKey('url_input'),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.link_rounded, color: AppColors.primary, size: 48),
+          ),
+          const SizedBox(height: 32),
+          const Text(
+            'Paste playlist or album link from supported platform to scan and fetch tracks.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+              height: 1.4,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 40),
+          Container(
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkCard : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+              ),
+            ),
+            child: TextField(
+              controller: _urlController,
+              textInputAction: TextInputAction.go,
+              autofocus: true,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : AppColors.textPrimary,
+              ),
+              decoration: InputDecoration(
+                hintText: hintText,
+                hintStyle: TextStyle(
+                  color: isDark
+                      ? AppColors.darkSubtitle.withValues(alpha: 0.4)
+                      : AppColors.textTertiary.withValues(alpha: 0.5),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                ),
+                prefixIcon: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Icon(Icons.search_rounded, color: AppColors.primary, size: 20),
+                ),
+                prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _urlController,
+                  builder: (_, v, __) => v.text.isEmpty
+                      ? const SizedBox.shrink()
+                      : IconButton(
+                          icon: Icon(Icons.cancel, size: 20, color: isDark ? Colors.white60 : Colors.black54),
+                          onPressed: _urlController.clear,
+                        ),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 18),
+              ),
+              onSubmitted: (_) => _fetchMetadata(),
+            ),
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _fetchMetadata,
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 18),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
+            ),
+            child: const Text(
+              'Import playlist',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _playlistPlaceholder() => Container(
+        color: AppColors.primary.withValues(alpha: 0.1),
+        child: const Icon(Icons.playlist_play_rounded, color: AppColors.primary, size: 40),
+      );
 }

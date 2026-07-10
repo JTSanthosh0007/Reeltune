@@ -209,10 +209,16 @@ const handlePlaylistMetadata = async (req, res, next) => {
         '--force-ipv4'
       ];
 
-      execFile(YTDLP_BIN, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000 }, (err, stdout, stderr) => {
+      execFile(YTDLP_BIN, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000 }, async (err, stdout, stderr) => {
         if (err) {
-          console.error(`[Playlist] Error parsing playlist:`, stderr || err.message);
-          return res.status(500).json({ success: false, error_code: 'PLAYLIST_FETCH_ERROR', message: 'Failed to fetch playlist metadata' });
+          console.warn(`[Playlist] yt-dlp failed, falling back to YouTube HTML scrape:`, stderr || err.message);
+          try {
+            const scrapedData = await parseYoutubePlaylistScrape(url);
+            return res.json(scrapedData);
+          } catch (scrapeErr) {
+            console.error(`[Playlist] HTML scrape fallback also failed:`, scrapeErr.message);
+            return res.status(500).json({ success: false, error_code: 'PLAYLIST_FETCH_ERROR', message: 'Failed to fetch playlist metadata' });
+          }
         }
 
         try {
@@ -453,10 +459,100 @@ function parseISO8601Duration(duration) {
   if (!duration) return 180000;
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return 180000;
-  const hours = parseInt(match[1] || 0, 10);
-  const minutes = parseInt(match[2] || 0, 10);
-  const seconds = parseInt(match[3] || 0, 10);
+  
+  const hours = parseInt(match[1] || '0', 10);
+  const minutes = parseInt(match[2] || '0', 10);
+  const seconds = parseInt(match[3] || '0', 10);
+  
   return ((hours * 60 + minutes) * 60 + seconds) * 1000;
+}
+
+/**
+ * Scraping fallback for YouTube / YouTube Music playlist metadata when yt-dlp is blocked
+ */
+async function parseYoutubePlaylistScrape(url) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept-Language': 'en-US,en;q=0.9',
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP error ${response.status}`);
+  }
+  const html = await response.text();
+  const jsonMatch = html.match(/var ytInitialData = ({[\s\S]*?});<\/script>/) ||
+                    html.match(/window\["ytInitialData"\] = ({[\s\S]*?});/);
+  if (!jsonMatch) {
+    throw new Error('Failed to find ytInitialData in HTML');
+  }
+  
+  const data = JSON.parse(jsonMatch[1]);
+  
+  let contents = [];
+  try {
+    contents = data.contents?.twoColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents?.[0]?.playlistVideoListRenderer?.contents || [];
+  } catch (e) {}
+
+  if (!contents || contents.length === 0) {
+    try {
+      contents = data.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents?.[0]?.playlistVideoListRenderer?.contents || [];
+    } catch (e) {}
+  }
+  
+  if (!contents || contents.length === 0) {
+     try {
+       const section = data.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.musicPlaylistShelfRenderer;
+       contents = section?.contents || [];
+     } catch (e) {}
+  }
+
+  const tracks = [];
+  for (const item of contents) {
+    const video = item.playlistVideoRenderer || item.musicResponsiveListItemRenderer;
+    if (!video) continue;
+    
+    let title = 'Unknown Video';
+    let artist = 'Unknown Creator';
+    let id = '';
+    let durationMs = 180000;
+
+    if (item.playlistVideoRenderer) {
+      title = video.title?.runs?.[0]?.text || title;
+      artist = video.shortBylineText?.runs?.[0]?.text || artist;
+      id = video.videoId;
+      durationMs = parseInt(video.lengthSeconds || '180', 10) * 1000;
+    } else if (item.musicResponsiveListItemRenderer) {
+      const titleColumn = video.flexColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs?.[0];
+      title = titleColumn?.text || title;
+      
+      const artistColumn = video.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs;
+      artist = artistColumn?.map(r => r.text).join('') || artist;
+      
+      id = video.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId || '';
+    }
+
+    if (id) {
+      tracks.push({
+        title,
+        artist,
+        url: `https://www.youtube.com/watch?v=${id}`,
+        durationMs
+      });
+    }
+  }
+
+  let title = 'YouTube Playlist';
+  try {
+    title = data.metadata?.playlistMetadataRenderer?.title || data.header?.playlistHeaderRenderer?.title?.runs?.[0]?.text || title;
+  } catch (e) {}
+
+  return {
+    title,
+    description: '',
+    coverUrl: '',
+    tracks
+  };
 }
 
 module.exports = router;

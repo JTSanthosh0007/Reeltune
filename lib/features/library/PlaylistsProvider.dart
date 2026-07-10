@@ -5,13 +5,14 @@ import '../../core/models/playlist.dart';
 import 'PlaylistRepository.dart';
 
 final playlistsProvider = StateNotifierProvider<PlaylistsNotifier, AsyncValue<List<Playlist>>>((ref) {
-  return PlaylistsNotifier(ref.watch(playlistRepositoryProvider));
+  return PlaylistsNotifier(ref.watch(playlistRepositoryProvider), ref);
 });
 
 class PlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
   final PlaylistRepository _playlistRepo;
+  final Ref _ref;
 
-  PlaylistsNotifier(this._playlistRepo) : super(const AsyncValue.loading()) {
+  PlaylistsNotifier(this._playlistRepo, this._ref) : super(const AsyncValue.loading()) {
     loadPlaylists();
   }
 
@@ -24,13 +25,30 @@ class PlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
     }
   }
 
-  Future<Playlist?> createPlaylist(String name) async {
+  Future<Playlist?> createPlaylist(
+    String name, {
+    String? description,
+    String? coverImagePath,
+  }) async {
     try {
-      final playlist = await _playlistRepo.createPlaylist(name);
+      final playlist = await _playlistRepo.createPlaylist(
+        name,
+        description: description,
+        coverImagePath: coverImagePath,
+      );
       await loadPlaylists();
       return playlist;
     } catch (e) {
       return null;
+    }
+  }
+
+  Future<void> updatePlaylist(Playlist playlist) async {
+    try {
+      await _playlistRepo.updatePlaylist(playlist);
+      await loadPlaylists();
+    } catch (e) {
+      // Handle error
     }
   }
 
@@ -55,6 +73,7 @@ class PlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
   Future<void> addClipToPlaylist(String playlistId, String clipId) async {
     try {
       await _playlistRepo.addClipToPlaylist(playlistId, clipId);
+      _ref.invalidate(playlistClipsProvider(playlistId));
     } catch (e) {
       // Handle error
     }
@@ -63,6 +82,16 @@ class PlaylistsNotifier extends StateNotifier<AsyncValue<List<Playlist>>> {
   Future<void> removeClipFromPlaylist(String playlistId, String clipId) async {
     try {
       await _playlistRepo.removeClipFromPlaylist(playlistId, clipId);
+      _ref.invalidate(playlistClipsProvider(playlistId));
+    } catch (e) {
+      // Handle error
+    }
+  }
+
+  Future<void> reorderPlaylistClips(String playlistId, List<String> clipIds) async {
+    try {
+      await _playlistRepo.reorderPlaylistClips(playlistId, clipIds);
+      _ref.invalidate(playlistClipsProvider(playlistId));
     } catch (e) {
       // Handle error
     }
@@ -77,7 +106,6 @@ final playlistClipsProvider = FutureProvider.family<List<Clip>, String>((ref, pl
 // Search playlists provider
 final searchPlaylistsProvider = FutureProvider.family<List<Playlist>, String>((ref, query) async {
   if (query.trim().isEmpty) return [];
-  // Re-fetch when playlists change
   ref.watch(playlistsProvider);
   return ref.watch(playlistRepositoryProvider).searchPlaylists(query);
 });

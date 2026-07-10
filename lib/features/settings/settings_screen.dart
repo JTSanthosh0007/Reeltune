@@ -38,7 +38,7 @@ final settingsStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
 });
 
 // App settings state providers (mock/persisted settings)
-final playbackQualityProvider = StateProvider<String>((ref) => 'High (320kbps)');
+final playbackQualityProvider = StateProvider<String>((ref) => 'High (192kbps)');
 final storagePathProvider = StateProvider<String>((ref) => 'Internal Storage');
 final downloadWifiOnlyProvider = StateProvider<bool>((ref) => true);
 final lockscreenWidgetStyleProvider = StateProvider<String>((ref) => 'Modern Wave');
@@ -791,7 +791,7 @@ class SettingsScreen extends ConsumerWidget {
                   ],
                 ),
               ),
-              ...['Low (96kbps)', 'Medium (160kbps)', 'High (320kbps)'].map((quality) {
+              ...['Low (96kbps)', 'Medium (128kbps)', 'High (192kbps)', 'Original (Source)'].map((quality) {
                 return RadioListTile<String>(
                   title: Text(quality),
                   value: quality,

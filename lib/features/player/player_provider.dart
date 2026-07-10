@@ -1,5 +1,6 @@
 import 'dart:async';
-
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -20,7 +21,7 @@ class PlayerState {
   final bool isPlaying;
   final Duration position;
   final Duration duration;
-  final bool isLooping;
+  final AudioServiceRepeatMode repeatMode;
   final bool isLoading;
   final double speed;
   final Duration? sleepTimerRemaining;
@@ -29,13 +30,15 @@ class PlayerState {
   final bool isVocalEnabled;
   final bool isLoudnessNormalizerEnabled;
   final bool isShuffleEnabled;
+  final String equalizerPreset;
+  final List<double> equalizerGains;
 
   const PlayerState({
     this.currentClip,
     this.isPlaying = false,
     this.position = Duration.zero,
     this.duration = Duration.zero,
-    this.isLooping = false,
+    this.repeatMode = AudioServiceRepeatMode.none,
     this.isLoading = false,
     this.speed = 1.0,
     this.sleepTimerRemaining,
@@ -44,14 +47,18 @@ class PlayerState {
     this.isVocalEnabled = false,
     this.isLoudnessNormalizerEnabled = false,
     this.isShuffleEnabled = false,
+    this.equalizerPreset = 'Normal',
+    this.equalizerGains = const [0.0, 0.0, 0.0, 0.0, 0.0],
   });
+
+  bool get isLooping => repeatMode == AudioServiceRepeatMode.one;
 
   PlayerState copyWith({
     Clip? currentClip,
     bool? isPlaying,
     Duration? position,
     Duration? duration,
-    bool? isLooping,
+    AudioServiceRepeatMode? repeatMode,
     bool? isLoading,
     double? speed,
     Duration? Function()? sleepTimerRemaining,
@@ -60,13 +67,15 @@ class PlayerState {
     bool? isVocalEnabled,
     bool? isLoudnessNormalizerEnabled,
     bool? isShuffleEnabled,
+    String? equalizerPreset,
+    List<double>? equalizerGains,
   }) {
     return PlayerState(
       currentClip: currentClip ?? this.currentClip,
       isPlaying: isPlaying ?? this.isPlaying,
       position: position ?? this.position,
       duration: duration ?? this.duration,
-      isLooping: isLooping ?? this.isLooping,
+      repeatMode: repeatMode ?? this.repeatMode,
       isLoading: isLoading ?? this.isLoading,
       speed: speed ?? this.speed,
       sleepTimerRemaining: sleepTimerRemaining != null ? sleepTimerRemaining() : this.sleepTimerRemaining,
@@ -75,6 +84,8 @@ class PlayerState {
       isVocalEnabled: isVocalEnabled ?? this.isVocalEnabled,
       isLoudnessNormalizerEnabled: isLoudnessNormalizerEnabled ?? this.isLoudnessNormalizerEnabled,
       isShuffleEnabled: isShuffleEnabled ?? this.isShuffleEnabled,
+      equalizerPreset: equalizerPreset ?? this.equalizerPreset,
+      equalizerGains: equalizerGains ?? this.equalizerGains,
     );
   }
 
@@ -85,6 +96,17 @@ class PlayerState {
     return position.inMilliseconds / duration.inMilliseconds;
   }
 }
+
+const Map<String, List<double>> equalizerPresets = {
+  'Normal': [0.0, 0.0, 0.0, 0.0, 0.0],
+  'Bass Boost': [10.0, 6.0, 0.0, 0.0, 0.0],
+  'Treble Boost': [0.0, 0.0, 0.0, 6.0, 10.0],
+  'Vocal': [-3.0, 0.0, 7.0, 5.0, -3.0],
+  'Rock': [5.0, 3.0, -1.0, 3.0, 5.0],
+  'Pop': [-2.0, -1.0, 3.0, 2.0, -1.0],
+  'Jazz': [4.0, 2.0, -2.0, 2.0, 4.0],
+  'Classical': [5.0, 3.0, -2.0, 4.0, 4.0],
+};
 
 // --- Player provider ---
 final playerProvider =
@@ -103,9 +125,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   String? _lastClipId;
   Duration _lastPosition = Duration.zero;
   Duration _lastDuration = Duration.zero;
+  String? _lastLoggedClipId;
 
   PlayerNotifier(this._ref) : super(const PlayerState()) {
     _initListeners();
+    _restoreQueueState();
+    _restoreEqualizerState();
   }
 
   ReelTuneAudioHandler get _handler => audioHandler as ReelTuneAudioHandler;
@@ -124,13 +149,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       // Update our position tracker
       _lastPosition = stateEvent.updatePosition;
 
-      // Natural end of the final track in queue
-      if (stateEvent.processingState == AudioProcessingState.completed) {
-        if (_lastClipId != null) {
-          _ref.read(clipRepositoryProvider).updateLastPlayed(_lastClipId!);
-          _ref.invalidate(recentClipsProvider);
-          _lastClipId = null;
-        }
+      // Log immediately when playback starts
+      if (stateEvent.playing && state.currentClip != null && state.currentClip!.id != _lastLoggedClipId) {
+        _lastLoggedClipId = state.currentClip!.id;
+        _ref.read(clipRepositoryProvider).updateLastPlayed(state.currentClip!.id);
+        _ref.invalidate(recentClipsProvider);
       }
 
       final shouldThrottle = positionChanged &&
@@ -143,13 +166,16 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         return;
       }
 
-      if (positionChanged) _lastPositionUpdate = now;
+      if (positionChanged) {
+        _lastPositionUpdate = now;
+        _savePlaybackPosition();
+      }
 
       state = state.copyWith(
         isPlaying: stateEvent.playing,
         isLoading: isLoading,
         speed: stateEvent.speed,
-        isLooping: stateEvent.repeatMode == AudioServiceRepeatMode.one,
+        repeatMode: stateEvent.repeatMode,
         isShuffleEnabled: stateEvent.shuffleMode == AudioServiceShuffleMode.all,
       );
     });
@@ -158,29 +184,25 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _mediaItemSub = audioHandler.mediaItem.listen((item) {
       if (!mounted) return;
 
-      // Track transition logic: check if the previous track reached completion
       if (item == null) {
-        if (_lastClipId != null) {
-          final finished = _lastDuration > Duration.zero &&
-              (_lastDuration - _lastPosition).inSeconds <= 2;
-          if (finished) {
-            _ref.read(clipRepositoryProvider).updateLastPlayed(_lastClipId!);
-            _ref.invalidate(recentClipsProvider);
-          }
-        }
         _lastClipId = null;
         _lastDuration = Duration.zero;
       } else {
-        if (_lastClipId != null && _lastClipId != item.id) {
-          final finished = _lastDuration > Duration.zero &&
-              (_lastDuration - _lastPosition).inSeconds <= 2;
-          if (finished) {
-            _ref.read(clipRepositoryProvider).updateLastPlayed(_lastClipId!);
-            _ref.invalidate(recentClipsProvider);
-          }
-        }
         _lastClipId = item.id;
         _lastDuration = item.duration ?? Duration.zero;
+        
+        // Log immediately if already playing
+        if (audioHandler.playbackState.value.playing && item.id != _lastLoggedClipId) {
+          _lastLoggedClipId = item.id;
+          _ref.read(clipRepositoryProvider).updateLastPlayed(item.id);
+          _ref.invalidate(recentClipsProvider);
+        }
+
+        // Save current index
+        final idx = _handler.player.currentIndex;
+        if (idx != null) {
+          _saveQueueIndex(idx);
+        }
       }
 
       if (item == null) return;
@@ -263,6 +285,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       );
       _handler.play();
       _handler.fadeVolume(1.0, const Duration(milliseconds: 300));
+      _saveQueueState(clips, initialIndex);
     } catch (e) {
       _handler.playbackState.add(_handler.playbackState.value.copyWith(
         errorMessage: 'Failed to load audio: $e',
@@ -272,6 +295,25 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   Future<void> playClip(Clip clip) async {
     await playQueue([clip], 0);
+  }
+
+  Future<void> moveQueueItem(int oldIndex, int newIndex) async {
+    await _handler.moveQueueItem(oldIndex, newIndex);
+    try {
+      final currentQueue = _handler.queue.value;
+      final allClips = await _ref.read(clipRepositoryProvider).getAllClips();
+      final Map<String, Clip> clipMap = {for (final c in allClips) c.id: c};
+      final List<Clip> restoredClips = [];
+      for (final item in currentQueue) {
+        if (clipMap.containsKey(item.id)) {
+          restoredClips.add(clipMap[item.id]!);
+        }
+      }
+      final activeIndex = _handler.player.currentIndex ?? 0;
+      await _saveQueueState(restoredClips, activeIndex);
+    } catch (e) {
+      debugPrint('Error saving moved queue: $e');
+    }
   }
 
   Future<void> togglePlayPause() async {
@@ -306,7 +348,19 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   void toggleLoop() {
-    final nextMode = state.isLooping ? AudioServiceRepeatMode.none : AudioServiceRepeatMode.one;
+    final AudioServiceRepeatMode nextMode;
+    switch (state.repeatMode) {
+      case AudioServiceRepeatMode.none:
+        nextMode = AudioServiceRepeatMode.all;
+        break;
+      case AudioServiceRepeatMode.all:
+        nextMode = AudioServiceRepeatMode.one;
+        break;
+      case AudioServiceRepeatMode.one:
+      default:
+        nextMode = AudioServiceRepeatMode.none;
+        break;
+    }
     audioHandler.setRepeatMode(nextMode);
   }
 
@@ -370,6 +424,169 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   void toggleLoudnessNormalization(bool enable) {
     _handler.toggleLoudnessNormalization(enable);
     state = state.copyWith(isLoudnessNormalizerEnabled: enable);
+  }
+
+  Future<void> _saveQueueState(List<Clip> clips, int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ids = clips.map((c) => c.id).toList();
+      await prefs.setStringList('reeltune_queue_ids', ids);
+      await prefs.setInt('reeltune_queue_index', index);
+    } catch (e) {
+      debugPrint('Error saving queue state: $e');
+    }
+  }
+
+  Future<void> _saveQueueIndex(int index) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('reeltune_queue_index', index);
+    } catch (e) {
+      debugPrint('Error saving queue index: $e');
+    }
+  }
+
+  Future<void> _savePlaybackPosition() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pos = _handler.player.position.inMilliseconds;
+      await prefs.setInt('reeltune_queue_position', pos);
+    } catch (e) {
+      debugPrint('Error saving position: $e');
+    }
+  }
+
+  Future<void> _restoreQueueState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedIds = prefs.getStringList('reeltune_queue_ids');
+      if (savedIds == null || savedIds.isEmpty) return;
+
+      final savedIndex = prefs.getInt('reeltune_queue_index') ?? 0;
+      final savedPosition = prefs.getInt('reeltune_queue_position') ?? 0;
+
+      final allClips = await _ref.read(clipRepositoryProvider).getAllClips();
+      final Map<String, Clip> clipMap = {for (final c in allClips) c.id: c};
+      final List<Clip> restoredClips = [];
+      for (final id in savedIds) {
+        if (clipMap.containsKey(id)) {
+          restoredClips.add(clipMap[id]!);
+        }
+      }
+
+      if (restoredClips.isEmpty) return;
+
+      final List<MediaItem> mediaItems = [];
+      final List<AudioSource> sources = [];
+
+      final albums = _ref.read(albumsProvider).value ?? [];
+
+      for (final clip in restoredClips) {
+        Album? album;
+        try {
+          album = albums.firstWhere((a) => a.id == clip.albumId);
+        } catch (_) {}
+
+        final mediaItem = MediaItem(
+          id: clip.id,
+          title: clip.title,
+          album: clip.sourcePlatform ?? 'ReelTune',
+          artist: clip.artist ?? 'Unknown Artist',
+          duration: clip.durationMs != null ? Duration(milliseconds: clip.durationMs!) : null,
+          artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
+              ? Uri.file(album.coverImagePath!)
+              : null,
+          extras: {
+            'albumId': clip.albumId,
+            'filePath': clip.filePath,
+          },
+        );
+        mediaItems.add(mediaItem);
+        sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
+      }
+
+      _handler.queue.add(mediaItems);
+      final playlist = ConcatenatingAudioSource(children: sources);
+      
+      await _handler.player.setAudioSource(
+        playlist,
+        initialIndex: savedIndex,
+        initialPosition: Duration(milliseconds: savedPosition),
+      );
+      
+      if (savedIndex < restoredClips.length) {
+        final targetClip = restoredClips[savedIndex];
+        state = state.copyWith(
+          currentClip: targetClip,
+          position: Duration(milliseconds: savedPosition),
+          duration: targetClip.durationMs != null
+              ? Duration(milliseconds: targetClip.durationMs!)
+              : Duration.zero,
+        );
+      }
+    } catch (e) {
+      debugPrint('Error restoring queue state: $e');
+    }
+  }
+
+  void setEqualizerPreset(String preset) {
+    if (preset == 'Custom') {
+      state = state.copyWith(equalizerPreset: preset);
+      return;
+    }
+    final gains = equalizerPresets[preset] ?? const [0.0, 0.0, 0.0, 0.0, 0.0];
+    _handler.setEqualizerPresetGains(gains);
+    state = state.copyWith(
+      equalizerPreset: preset,
+      equalizerGains: gains,
+    );
+    _saveEqualizerState();
+  }
+
+  void setEqualizerBandGain(int band, double gain) {
+    _handler.setEqualizerBand(band, gain);
+    final nextGains = List<double>.from(state.equalizerGains);
+    if (band < nextGains.length) {
+      nextGains[band] = gain;
+    }
+    state = state.copyWith(
+      equalizerPreset: 'Custom',
+      equalizerGains: nextGains,
+    );
+    _saveEqualizerState();
+  }
+
+  Future<void> _saveEqualizerState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('reeltune_eq_preset', state.equalizerPreset);
+      final gainsStr = state.equalizerGains.map((g) => g.toString()).toList();
+      await prefs.setStringList('reeltune_eq_gains', gainsStr);
+    } catch (e) {
+      debugPrint('Error saving EQ: $e');
+    }
+  }
+
+  Future<void> _restoreEqualizerState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final preset = prefs.getString('reeltune_eq_preset') ?? 'Normal';
+      final gainsStr = prefs.getStringList('reeltune_eq_gains');
+      List<double> gains = const [0.0, 0.0, 0.0, 0.0, 0.0];
+      if (gainsStr != null && gainsStr.length == 5) {
+        gains = gainsStr.map((s) => double.tryParse(s) ?? 0.0).toList();
+      } else if (equalizerPresets.containsKey(preset)) {
+        gains = equalizerPresets[preset]!;
+      }
+
+      _handler.setEqualizerPresetGains(gains);
+      state = state.copyWith(
+        equalizerPreset: preset,
+        equalizerGains: gains,
+      );
+    } catch (e) {
+      debugPrint('Error restoring EQ: $e');
+    }
   }
 
   Future<void> stop() async {

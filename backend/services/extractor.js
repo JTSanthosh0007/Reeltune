@@ -17,15 +17,16 @@ const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
  *
  * Pipeline:
  * 1. Use yt-dlp to download video (best audio quality)
- * 2. Use ffmpeg to extract audio as MP3 (128kbps)
+ * 2. Use ffmpeg to extract audio as MP3 (with dynamic bitrate)
  * 3. Upload MP3 to S3
  * 4. Clean up temp files
  *
  * @param {string} url - The video URL (Instagram/TikTok/YouTube)
  * @param {string} jobId - Unique job identifier
+ * @param {string} [quality] - Desired quality (low/medium/high/original)
  * @returns {{ s3Key: string, title: string }}
  */
-async function extractAudio(url, jobId) {
+async function extractAudio(url, jobId, quality = 'high') {
   const tempDir = path.join(os.tmpdir(), 'reeltune', jobId);
   const videoPath = path.join(tempDir, 'video');
   const audioPath = path.join(tempDir, `${jobId}.mp3`);
@@ -40,8 +41,8 @@ async function extractAudio(url, jobId) {
     const { title, downloadedPath } = await downloadWithYtDlp(url, videoPath);
 
     // Step 2: Extract audio with ffmpeg
-    console.log(`[Extractor] Extracting audio from: ${downloadedPath}`);
-    await extractWithFfmpeg(downloadedPath, audioPath);
+    console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadedPath}`);
+    await extractWithFfmpeg(downloadedPath, audioPath, quality);
 
     // Step 3: Upload to S3
     console.log(`[Extractor] Uploading to S3...`);
@@ -71,12 +72,14 @@ async function extractAudio(url, jobId) {
  */
 function downloadWithYtDlp(url, outputPath) {
   return new Promise((resolve, reject) => {
-    // First, get the title
+    // First, get the title (with rate limit bypass flags)
     const infoArgs = [
       url,
       '--print', 'title',
       '--no-download',
       '--no-warnings',
+      '--no-check-certificates',
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     ];
 
     let title = 'Audio Clip';
@@ -93,14 +96,30 @@ function downloadWithYtDlp(url, outputPath) {
         '-o', `${outputPath}.%(ext)s`,
         '--no-playlist',
         '--no-warnings',
+        '--no-check-certificates',
         '--max-filesize', '100m',
         '--socket-timeout', '30',
-        '--retries', '3',
+        '--retries', '5',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        '--referer', 'https://www.google.com/',
       ];
 
       execFile(YTDLP_BIN, downloadArgs, { timeout: 120000 }, (err, stdout, stderr) => {
         if (err) {
-          console.error(`[yt-dlp] Error:`, stderr || err.message);
+          const errOutput = stderr || err.message;
+          console.error(`[yt-dlp] Error:`, errOutput);
+          
+          // Map descriptive error messages for common yt-dlp issues
+          if (errOutput.includes('Private video') || errOutput.includes('requires login') || errOutput.includes('login_required')) {
+            return reject(new Error('Instagram/TikTok blocked request: Private video or login required'));
+          } else if (errOutput.includes('429') || errOutput.includes('Too Many Requests')) {
+            return reject(new Error('Rate limited by platform. Please try again later.'));
+          } else if (errOutput.includes('Video unavailable') || errOutput.includes('not found')) {
+            return reject(new Error('Video unavailable or has been deleted.'));
+          } else if (errOutput.includes('Unsupported URL') || errOutput.includes('URL is invalid')) {
+            return reject(new Error('Invalid URL format or platform not supported.'));
+          }
+          
           return reject(new Error(`Download failed: ${err.message}`));
         }
 
@@ -127,19 +146,30 @@ function downloadWithYtDlp(url, outputPath) {
 
 /**
  * Extract audio from a video file using ffmpeg
- * Converts to MP3 at 128kbps
+ * Converts to MP3 at specified bitrate
  */
-function extractWithFfmpeg(inputPath, outputPath) {
+function extractWithFfmpeg(inputPath, outputPath, quality) {
+  let bitrate = '192'; // Default High
+  if (quality === 'low') {
+    bitrate = '96';
+  } else if (quality === 'medium') {
+    bitrate = '128';
+  } else if (quality === 'high') {
+    bitrate = '192';
+  } else if (quality === 'original') {
+    bitrate = '320';
+  }
+
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
       .noVideo()
       .audioCodec('libmp3lame')
-      .audioBitrate(320)
+      .audioBitrate(bitrate)
       .audioChannels(2)
       .audioFrequency(44100)
       .output(outputPath)
       .on('end', () => {
-        console.log(`[ffmpeg] Audio extraction complete: ${outputPath}`);
+        console.log(`[ffmpeg] Audio extraction complete: ${outputPath} (${bitrate}kbps)`);
         resolve(outputPath);
       })
       .on('error', (err) => {

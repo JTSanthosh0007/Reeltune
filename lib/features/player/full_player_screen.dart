@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show FontFeature;
 import 'dart:ui' as ui show Clip;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -181,7 +182,7 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
                 ),
                 IconButton(
                   icon: const Icon(Icons.more_vert_rounded),
-                  onPressed: () {},
+                  onPressed: () => _showQueueBottomSheet(context, ref),
                   color: isDark ? Colors.white : AppColors.textPrimary,
                 ),
               ],
@@ -750,72 +751,371 @@ class _FullPlayerScreenState extends ConsumerState<FullPlayerScreen> with Single
   void _showEnhancementsMenu(BuildContext context, WidgetRef ref, PlayerState state) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.darkCard
+          : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            return Container(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Audio Enhancements', style: Theme.of(context).textTheme.headlineMedium),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Customize EQ presets for standard inputs.',
-                    style: Theme.of(context).textTheme.bodySmall,
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final bands = ['60 Hz', '230 Hz', '910 Hz', '4 kHz', '14 kHz'];
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.8,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (context, scrollController) {
+                return SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.textTertiary.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Equalizer & Presets',
+                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : AppColors.textPrimary,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Preset Dropdown Selector
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Preset:',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : AppColors.textPrimary,
+                                ),
+                          ),
+                          DropdownButton<String>(
+                            value: state.equalizerPreset,
+                            dropdownColor: isDark ? AppColors.darkCard : Colors.white,
+                            items: ['Normal', 'Bass Boost', 'Treble Boost', 'Vocal', 'Rock', 'Pop', 'Jazz', 'Classical', 'Custom']
+                                .map((preset) => DropdownMenuItem(
+                                      value: preset,
+                                      child: Text(preset),
+                                    ))
+                                .toList(),
+                            onChanged: (newPreset) {
+                              if (newPreset != null) {
+                                ref.read(playerProvider.notifier).setEqualizerPreset(newPreset);
+                                setModalState(() {
+                                  state = ref.read(playerProvider);
+                                });
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+
+                      // 5-Band Sliders
+                      Text(
+                        'Frequency Bands',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...List.generate(5, (index) {
+                        final currentGain = index < state.equalizerGains.length
+                            ? state.equalizerGains[index]
+                            : 0.0;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 64,
+                                child: Text(
+                                  bands[index],
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    color: isDark ? Colors.white70 : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderTheme.of(context).copyWith(
+                                    activeTrackColor: AppColors.primary,
+                                    thumbColor: AppColors.primary,
+                                  ),
+                                  child: Slider(
+                                    value: currentGain.clamp(-10.0, 10.0),
+                                    min: -10.0,
+                                    max: 10.0,
+                                    onChanged: (val) {
+                                      ref.read(playerProvider.notifier).setEqualizerBandGain(index, val);
+                                      setModalState(() {
+                                        state = ref.read(playerProvider);
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 54,
+                                child: Text(
+                                  '${currentGain >= 0 ? '+' : ''}${currentGain.toStringAsFixed(1)} dB',
+                                  textAlign: TextAlign.end,
+                                  style: const TextStyle(
+                                    fontFeatures: [FontFeature.tabularFigures()],
+                                    fontSize: 12,
+                                    color: AppColors.textTertiary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 24),
+                      const Divider(),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Quick Effects',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      SwitchListTile(
+                        title: const Text('Bass Boost'),
+                        subtitle: const Text('Enhanced low-end frequencies'),
+                        value: state.isBassBoostEnabled,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) {
+                          ref.read(playerProvider.notifier).toggleBassBoost(val);
+                          setModalState(() {
+                            state = ref.read(playerProvider);
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        title: const Text('Treble Boost'),
+                        subtitle: const Text('Enhanced highs'),
+                        value: state.isTrebleBoostEnabled,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) {
+                          ref.read(playerProvider.notifier).toggleTrebleBoost(val);
+                          setModalState(() {
+                            state = ref.read(playerProvider);
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        title: const Text('Vocal Booster'),
+                        subtitle: const Text('Highlight vocal track clarity'),
+                        value: state.isVocalEnabled,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) {
+                          ref.read(playerProvider.notifier).toggleVocalEnhancement(val);
+                          setModalState(() {
+                            state = ref.read(playerProvider);
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        title: const Text('Loudness Normalizer'),
+                        subtitle: const Text('Maintain consistent volume'),
+                        value: state.isLoudnessNormalizerEnabled,
+                        activeColor: AppColors.primary,
+                        onChanged: (val) {
+                          ref.read(playerProvider.notifier).toggleLoudnessNormalization(val);
+                          setModalState(() {
+                            state = ref.read(playerProvider);
+                          });
+                        },
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  SwitchListTile(
-                    title: const Text('Bass Boost'),
-                    subtitle: const Text('Enhanced low-end frequencies'),
-                    value: state.isBassBoostEnabled,
-                    activeColor: AppColors.primary,
-                    onChanged: (val) {
-                      ref.read(playerProvider.notifier).toggleBassBoost(val);
-                      setModalState(() {
-                        state = state.copyWith(isBassBoostEnabled: val);
-                      });
-                    },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showQueueBottomSheet(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? AppColors.darkCard : AppColors.surfaceCard;
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.surfaceBorder;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.darkCard : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) {
+        return StreamBuilder<List<MediaItem>>(
+          stream: audioHandler.queue,
+          builder: (context, snapshot) {
+            final queue = snapshot.data ?? [];
+            final currentItem = audioHandler.mediaItem.value;
+
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (context, scrollController) {
+                return Container(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: AppColors.textTertiary.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Active Queue',
+                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : AppColors.textPrimary,
+                                ),
+                          ),
+                          Text(
+                            '${queue.length} song${queue.length == 1 ? '' : 's'}',
+                            style: const TextStyle(
+                              color: AppColors.textTertiary,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: queue.isEmpty
+                            ? Center(
+                                child: Text(
+                                  'Queue is empty',
+                                  style: TextStyle(
+                                    color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                                  ),
+                                ),
+                              )
+                            : ReorderableListView.builder(
+                                scrollController: scrollController,
+                                itemCount: queue.length,
+                                onReorder: (oldIndex, newIndex) {
+                                  if (newIndex > oldIndex) {
+                                    newIndex -= 1;
+                                  }
+                                  ref.read(playerProvider.notifier).moveQueueItem(oldIndex, newIndex);
+                                },
+                                itemBuilder: (context, index) {
+                                  final item = queue[index];
+                                  final isPlayingItem = currentItem?.id == item.id;
+
+                                  return Dismissible(
+                                    key: Key('queue_item_${item.id}_$index'),
+                                    direction: DismissDirection.endToStart,
+                                    background: Container(
+                                      alignment: Alignment.centerRight,
+                                      padding: const EdgeInsets.only(right: 20),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+                                    ),
+                                    onDismissed: (_) {
+                                      audioHandler.removeQueueItem(item);
+                                    },
+                                    child: Card(
+                                      key: ValueKey('card_${item.id}_$index'),
+                                      color: isPlayingItem
+                                          ? AppColors.primary.withValues(alpha: 0.12)
+                                          : (isDark ? AppColors.darkCard : Colors.white),
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        side: BorderSide(
+                                          color: isPlayingItem ? AppColors.primary : borderColor,
+                                          width: isPlayingItem ? 1.5 : 1.0,
+                                        ),
+                                      ),
+                                      child: ListTile(
+                                        leading: Icon(
+                                          isPlayingItem ? Icons.volume_up_rounded : Icons.music_note_rounded,
+                                          color: isPlayingItem ? AppColors.primary : AppColors.textTertiary,
+                                        ),
+                                        title: Text(
+                                          item.title,
+                                          style: TextStyle(
+                                            fontWeight: isPlayingItem ? FontWeight.bold : FontWeight.normal,
+                                            color: isPlayingItem ? AppColors.primary : (isDark ? Colors.white : AppColors.textPrimary),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        subtitle: Text(
+                                          item.artist ?? 'Unknown Artist',
+                                          style: TextStyle(
+                                            color: isPlayingItem
+                                                ? AppColors.primary.withValues(alpha: 0.8)
+                                                : (isDark ? AppColors.darkSubtitle : AppColors.textSecondary),
+                                            fontSize: 12,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        trailing: ReorderableDragStartListener(
+                                          index: index,
+                                          child: const Icon(Icons.drag_handle_rounded, color: AppColors.textTertiary),
+                                        ),
+                                        onTap: () {
+                                          audioHandler.skipToQueueItem(index);
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
-                  SwitchListTile(
-                    title: const Text('Treble Boost'),
-                    subtitle: const Text('Enhanced clarity and highs'),
-                    value: state.isTrebleBoostEnabled,
-                    activeColor: AppColors.primary,
-                    onChanged: (val) {
-                      ref.read(playerProvider.notifier).toggleTrebleBoost(val);
-                      setModalState(() {
-                        state = state.copyWith(isTrebleBoostEnabled: val);
-                      });
-                    },
-                  ),
-                  SwitchListTile(
-                    title: const Text('Vocal Booster'),
-                    subtitle: const Text('Highlight vocal track clarity'),
-                    value: state.isVocalEnabled,
-                    activeColor: AppColors.primary,
-                    onChanged: (val) {
-                      ref.read(playerProvider.notifier).toggleVocalEnhancement(val);
-                      setModalState(() {
-                        state = state.copyWith(isVocalEnabled: val);
-                      });
-                    },
-                  ),
-                  SwitchListTile(
-                    title: const Text('Loudness Normalizer'),
-                    subtitle: const Text('Maintain consistent playback volume'),
-                    value: state.isLoudnessNormalizerEnabled,
-                    activeColor: AppColors.primary,
-                    onChanged: (val) {
-                      ref.read(playerProvider.notifier).toggleLoudnessNormalization(val);
-                      setModalState(() {
-                        state = state.copyWith(isLoudnessNormalizerEnabled: val);
-                      });
-                    },
-                  ),
-                ],
-              ),
+                );
+              },
             );
           },
         );

@@ -9,7 +9,7 @@ final databaseHelperProvider = Provider<DatabaseHelper>((ref) {
 class DatabaseHelper {
   static Database? _database;
   static const String _dbName = 'reeltune.db';
-  static const int _dbVersion = 4;
+  static const int _dbVersion = 5;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -82,6 +82,18 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 5) {
+      // Add description and cover_image_path to playlists, and sort_order to playlist_clips
+      try {
+        await db.execute('ALTER TABLE playlists ADD COLUMN description TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE playlists ADD COLUMN cover_image_path TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE playlist_clips ADD COLUMN sort_order INTEGER DEFAULT 0');
+      } catch (_) {}
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -133,7 +145,9 @@ class DatabaseHelper {
       CREATE TABLE playlists (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        created_at INTEGER NOT NULL
+        created_at INTEGER NOT NULL,
+        description TEXT,
+        cover_image_path TEXT
       )
     ''');
 
@@ -141,6 +155,7 @@ class DatabaseHelper {
       CREATE TABLE playlist_clips (
         playlist_id TEXT NOT NULL,
         clip_id TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
         PRIMARY KEY (playlist_id, clip_id),
         FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE,
         FOREIGN KEY (clip_id) REFERENCES clips(id) ON DELETE CASCADE

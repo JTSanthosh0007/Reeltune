@@ -76,7 +76,7 @@ class ExtractionService {
   }
 
   /// Submit a URL for audio extraction
-  Future<String> submitExtraction(String url) async {
+  Future<String> submitExtraction(String url, {String? quality}) async {
     final deviceId = await _getDeviceId();
 
     final response = await _apiClient.post<Map<String, dynamic>>(
@@ -84,6 +84,7 @@ class ExtractionService {
       data: {
         'url': url,
         'deviceId': deviceId,
+        if (quality != null) 'quality': quality,
       },
     );
 

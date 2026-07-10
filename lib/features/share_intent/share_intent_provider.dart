@@ -12,6 +12,7 @@ import '../../core/network/extraction_service.dart';
 import '../../core/storage/file_storage_service.dart';
 import '../albums/album_providers.dart';
 import '../notifications/notifications_provider.dart';
+import '../settings/settings_screen.dart';
 
 // --- Extraction flow state ---
 enum ExtractionStep {
@@ -133,9 +134,21 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
   Future<void> _extractFromUrl(String url) async {
     try {
       final extractionService = _ref.read(extractionServiceProvider);
+      final qualityText = _ref.read(playbackQualityProvider);
+
+      String cleanQuality = 'high';
+      if (qualityText.toLowerCase().contains('96')) {
+        cleanQuality = 'low';
+      } else if (qualityText.toLowerCase().contains('160') || qualityText.toLowerCase().contains('128')) {
+        cleanQuality = 'medium';
+      } else if (qualityText.toLowerCase().contains('320') || qualityText.toLowerCase().contains('192')) {
+        cleanQuality = 'high';
+      } else if (qualityText.toLowerCase().contains('original')) {
+        cleanQuality = 'original';
+      }
 
       // Submit extraction job
-      final jobId = await extractionService.submitExtraction(url);
+      final jobId = await extractionService.submitExtraction(url, quality: cleanQuality);
       state = state.copyWith(
         step: ExtractionStep.extracting,
         jobId: jobId,

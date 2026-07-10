@@ -16,6 +16,8 @@ import '../../core/ads/InterstitialService.dart';
 import 'home_screen.dart';
 
 // Import destinations for the navigation drawer
+import '../import/playlist_import_screen.dart';
+import '../import/ImportNotifier.dart';
 import '../albums/album_providers.dart';
 import '../albums/recent_songs_screen.dart';
 import '../library/favorites_screen.dart';
@@ -45,7 +47,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _AddLinkBottomSheet(),
+      builder: (_) => const _ImportOptionsBottomSheet(),
     );
   }
 
@@ -923,6 +925,127 @@ class _AddLinkBottomSheetState extends ConsumerState<_AddLinkBottomSheet> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImportOptionsBottomSheet extends StatelessWidget {
+  const _ImportOptionsBottomSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = isDark ? AppColors.darkCard : AppColors.surfaceCard;
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.surfaceBorder;
+
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border.all(color: borderColor, width: 1.5),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Align(
+            alignment: Alignment.center,
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textTertiary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Import Music',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Select how you want to add tracks to your ReelTune library.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 20),
+          
+          // Option 1: Paste Link
+          ListTile(
+            leading: const CircleAvatar(
+              backgroundColor: AppColors.primary,
+              child: Icon(Icons.link_rounded, color: Colors.white),
+            ),
+            title: const Text('Extract Link (Reels, TikTok, YouTube)', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('Extract audio from a single video link'),
+            onTap: () {
+              Navigator.pop(context);
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const _AddLinkBottomSheet(),
+              );
+            },
+          ),
+          const Divider(),
+          
+          // Option 2: Playlist Import
+          ListTile(
+            leading: CircleAvatar(
+              backgroundColor: AppColors.skyBlue.withValues(alpha: 0.1),
+              child: const Icon(Icons.playlist_add_rounded, color: AppColors.skyBlue),
+            ),
+            title: const Text('Import Spotify / YouTube Playlist', style: TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: const Text('Fetch tracks from public playlists and download them'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PlaylistImportScreen(),
+                ),
+              );
+            },
+          ),
+          const Divider(),
+          
+          // Option 3: Local Scan
+          Consumer(
+            builder: (context, ref, _) {
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.gold.withValues(alpha: 0.1),
+                  child: const Icon(Icons.phone_android_rounded, color: AppColors.gold),
+                ),
+                title: const Text('Scan Device Storage', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Scan and import local audio files from your device'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Scanning device storage...')),
+                  );
+                  await ref.read(importProvider.notifier).scanAndImportLocalSongs();
+                  final state = ref.read(importProvider);
+                  if (state.status == ImportStatus.success) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Successfully imported ${state.scannedCount} local tracks!')),
+                    );
+                  } else if (state.status == ImportStatus.failure) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Scanning failed: ${state.errorMessage}')),
+                    );
+                  }
+                },
+              );
+            },
+          ),
+          const SizedBox(height: 12),
         ],
       ),
     );

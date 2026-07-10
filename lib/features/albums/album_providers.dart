@@ -136,11 +136,7 @@ class RecentClipsNotifier extends AsyncNotifier<List<Clip>> {
   Future<List<Clip>> build() async {
     ref.watch(albumsProvider);
     final repo = ref.watch(clipRepositoryProvider);
-    final recentlyPlayed = await repo.getRecentlyPlayedClips(limit: 10);
-    if (recentlyPlayed.isNotEmpty) {
-      return recentlyPlayed;
-    }
-    return repo.getAllClips();
+    return await repo.getRecentlyPlayedClips(limit: 20);
   }
 
   Future<void> toggleFavorite(String clipId, bool isFavorite) async {

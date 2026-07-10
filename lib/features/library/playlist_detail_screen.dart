@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -49,26 +50,42 @@ class PlaylistDetailScreen extends ConsumerWidget {
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-                                  // Playlist cover placeholder
+                                  // Playlist cover
                                   Container(
                                     width: 110,
                                     height: 110,
                                     decoration: BoxDecoration(
-                                      gradient: AppColors.primaryGradient,
+                                      color: isDark ? AppColors.darkCard : Colors.white,
                                       borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                                      ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: AppColors.primary.withValues(alpha: 0.2),
+                                          color: AppColors.primary.withValues(alpha: 0.15),
                                           blurRadius: 15,
                                           offset: const Offset(0, 8),
                                         ),
                                       ],
                                     ),
-                                    child: const Icon(
-                                      Icons.playlist_play_rounded,
-                                      color: Colors.white,
-                                      size: 52,
-                                    ),
+                                    child: playlist.coverImagePath != null && playlist.coverImagePath!.isNotEmpty
+                                        ? ClipRRect(
+                                            borderRadius: BorderRadius.circular(16),
+                                            child: Image.file(
+                                              File(playlist.coverImagePath!),
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const Icon(
+                                                Icons.playlist_play_rounded,
+                                                color: AppColors.primary,
+                                                size: 52,
+                                              ),
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.playlist_play_rounded,
+                                            color: AppColors.primary,
+                                            size: 52,
+                                          ),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(
@@ -93,6 +110,18 @@ class PlaylistDetailScreen extends ConsumerWidget {
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                         ),
+                                        if (playlist.description != null && playlist.description!.isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            playlist.description!,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark ? AppColors.darkSubtitle : AppColors.textSecondary,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
                                         const SizedBox(height: 8),
                                         Text(
                                           '${clips.length} ${clips.length == 1 ? 'song' : 'songs'}',
@@ -182,17 +211,29 @@ class PlaylistDetailScreen extends ConsumerWidget {
                           ),
                         )
                       else
-                        SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final clip = clips[index];
-                              return ClipListTile(
+                        SliverReorderableList(
+                          itemCount: clips.length,
+                          onReorder: (oldIndex, newIndex) {
+                            final ids = clips.map((c) => c.id).toList();
+                            if (oldIndex < newIndex) {
+                              newIndex -= 1;
+                            }
+                            final item = ids.removeAt(oldIndex);
+                            ids.insert(newIndex, item);
+                            ref.read(playlistsProvider.notifier).reorderPlaylistClips(playlist.id, ids);
+                          },
+                          itemBuilder: (context, index) {
+                            final clip = clips[index];
+                            return ReorderableDelayedDragStartListener(
+                              key: ValueKey('playlist_clip_${clip.id}_$index'),
+                              index: index,
+                              child: ClipListTile(
                                 clip: clip,
                                 index: index,
                                 onPlay: () {
                                   ref.read(playerProvider.notifier).playQueue(clips, index);
                                 },
-                                onRename: null, // Custom playlist items cannot be renamed directly
+                                onRename: null,
                                 onDelete: () async {
                                   await ref
                                       .read(playlistsProvider.notifier)
@@ -202,10 +243,9 @@ class PlaylistDetailScreen extends ConsumerWidget {
                                     const SnackBar(content: Text('Removed from playlist')),
                                   );
                                 },
-                              );
-                            },
-                            childCount: clips.length,
-                          ),
+                              ),
+                            );
+                          },
                         ),
 
                       const SliverToBoxAdapter(

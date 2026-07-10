@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -359,14 +362,30 @@ class AlbumsScreen extends ConsumerWidget {
                         width: 50,
                         height: 50,
                         decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
+                          color: isDark ? AppColors.darkBorder : AppColors.gray100,
                           borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.playlist_play_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
+                        child: playlist.coverImagePath != null && playlist.coverImagePath!.isNotEmpty
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: Image.file(
+                                  File(playlist.coverImagePath!),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.playlist_play_rounded,
+                                    color: AppColors.primary,
+                                    size: 28,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.playlist_play_rounded,
+                                color: AppColors.primary,
+                                size: 28,
+                              ),
                       ),
                       title: Text(
                         playlist.name,
@@ -412,32 +431,98 @@ class AlbumsScreen extends ConsumerWidget {
   }
 
   void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
+    final nameController = TextEditingController();
+    final descController = TextEditingController();
+    String? coverPath;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('New Playlist'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Playlist name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                await ref.read(playlistsProvider.notifier).createPlaylist(name);
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return AlertDialog(
+            title: const Text('New Playlist'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    autofocus: true,
+                    decoration: const InputDecoration(hintText: 'Playlist name'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: descController,
+                    decoration: const InputDecoration(hintText: 'Description (optional)'),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Cover Image Selector
+                  Row(
+                    children: [
+                      Container(
+                        width: 64,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.darkBorder : AppColors.gray100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder),
+                        ),
+                        child: coverPath != null
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  File(coverPath!),
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Icon(Icons.image_outlined, color: AppColors.textTertiary),
+                      ),
+                      const SizedBox(width: 12),
+                      TextButton.icon(
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Pick Cover'),
+                        onPressed: () async {
+                          final picker = ImagePicker();
+                          final image = await picker.pickImage(source: ImageSource.gallery);
+                          if (image != null) {
+                            final appDir = await getApplicationDocumentsDirectory();
+                            final fileName = 'playlist_cover_${DateTime.now().millisecondsSinceEpoch}.jpg';
+                            final savedFile = await File(image.path).copy('${appDir.path}/$fileName');
+                            setModalState(() {
+                              coverPath = savedFile.path;
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final name = nameController.text.trim();
+                  if (name.isNotEmpty) {
+                    await ref.read(playlistsProvider.notifier).createPlaylist(
+                          name,
+                          description: descController.text.trim(),
+                          coverImagePath: coverPath,
+                        );
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: const Text('Create'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

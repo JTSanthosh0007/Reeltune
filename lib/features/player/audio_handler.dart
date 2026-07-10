@@ -181,6 +181,46 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
     playbackState.add(playbackState.value.copyWith(shuffleMode: shuffleMode));
   }
 
+  ConcatenatingAudioSource? get playlistSource => _player.audioSource as ConcatenatingAudioSource?;
+
+  @override
+  Future<void> addQueueItem(MediaItem mediaItem) async {
+    final playlist = playlistSource;
+    if (playlist == null) return;
+    final source = AudioSource.file(mediaItem.extras?['filePath'] as String? ?? '', tag: mediaItem);
+    await playlist.add(source);
+    final newQueue = List<MediaItem>.from(queue.value)..add(mediaItem);
+    queue.add(newQueue);
+  }
+
+  @override
+  Future<void> removeQueueItem(MediaItem mediaItem) async {
+    final playlist = playlistSource;
+    if (playlist == null) return;
+    final index = queue.value.indexWhere((item) => item.id == mediaItem.id);
+    if (index != -1) {
+      await playlist.removeAt(index);
+      final newQueue = List<MediaItem>.from(queue.value)..removeAt(index);
+      queue.add(newQueue);
+    }
+  }
+
+  Future<void> moveQueueItem(int oldIndex, int newIndex) async {
+    final playlist = playlistSource;
+    if (playlist == null) return;
+    await playlist.move(oldIndex, newIndex);
+    final newQueue = List<MediaItem>.from(queue.value);
+    final item = newQueue.removeAt(oldIndex);
+    newQueue.insert(newIndex, item);
+    queue.add(newQueue);
+  }
+
+  @override
+  Future<void> skipToQueueItem(int index) async {
+    if (index < 0 || index >= queue.value.length) return;
+    await _player.seek(Duration.zero, index: index);
+  }
+
   // Play a specific item from path
   Future<void> playFromPath(String path, MediaItem item) async {
     mediaItem.add(item);
@@ -218,6 +258,18 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
     eq.parameters.then((params) {
       if (bandIndex < params.bands.length) {
         params.bands[bandIndex].setGain(gain);
+      }
+    });
+  }
+
+  void setEqualizerPresetGains(List<double> gains) {
+    final eq = _equalizer;
+    if (eq == null) return;
+    eq.parameters.then((params) {
+      for (int i = 0; i < gains.length; i++) {
+        if (i < params.bands.length) {
+          params.bands[i].setGain(gains[i]);
+        }
       }
     });
   }

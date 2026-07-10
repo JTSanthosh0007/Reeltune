@@ -61,7 +61,7 @@ async function extractAudio(url, jobId, quality = 'high') {
 
     // Step 3: Upload to S3
     console.log(`[Extractor] Uploading to S3...`);
-    const s3Key = `extractions/${jobId}.mp3`;
+    s3Key = `extractions/${jobId}.mp3`;
     await uploadFile(audioPath, s3Key);
 
     console.log(`[Extractor] Extraction complete for job ${jobId}`);

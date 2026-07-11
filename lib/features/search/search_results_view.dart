@@ -416,7 +416,7 @@ class SearchResultsView extends ConsumerWidget {
                   ref.read(searchProvider.notifier).addToHistory(query);
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => PlaylistDetailScreen(playlistId: playlist.id),
+                      builder: (_) => PlaylistDetailScreen(playlist: playlist),
                     ),
                   );
                 },

@@ -13,6 +13,128 @@ if (process.env.FFMPEG_PATH) {
 
 const YTDLP_BIN = process.env.YTDLP_PATH || 'yt-dlp';
 
+// VideoDropper API Caching and Helpers
+const instagramCache = new Map();
+const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function isInstagramUrl(url) {
+  if (!url) return false;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    return hostname.includes('instagram.com') || hostname.includes('instagr.am');
+  } catch (_) {
+    return /instagram\.com|instagr\.am/i.test(url);
+  }
+}
+
+function maskApiKey(key) {
+  if (!key) return 'null';
+  if (key.length <= 8) return '********';
+  return key.substring(0, 4) + '...' + key.substring(key.length - 4);
+}
+
+async function downloadFileDirectly(url, outputPath) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download audio file: HTTP ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(outputPath, buffer);
+}
+
+async function fetchFromVideoDropperWithRetry(url, maxRetries = 3) {
+  const cacheKey = url.trim();
+  
+  // 1. Check cache
+  const cached = instagramCache.get(cacheKey);
+  if (cached && cached.expiryTime > Date.now()) {
+    console.log(`[VideoDropper] Cache hit for: ${url}`);
+    return cached.data;
+  }
+
+  const apiEndpoint = process.env.VIDEODROPPER_API_URL || 'https://api.videodropper.app/v1/instagram';
+  const apiKey = process.env.VIDEODROPPER_API_KEY || 'your_key_here';
+  const maskedKey = maskApiKey(apiKey);
+
+  let attempt = 0;
+  let lastError = null;
+
+  while (attempt < maxRetries) {
+    attempt++;
+    console.log(`[VideoDropper] Attempt ${attempt}/${maxRetries} for URL: ${url}`);
+    const startTime = Date.now();
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      
+      console.log(`[VideoDropper-Request] POST ${apiEndpoint} Headers: { Authorization: Bearer ${maskedKey} }`);
+      
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ url: url }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const duration = Date.now() - startTime;
+      console.log(`[VideoDropper-Response] Status: ${response.status} (${duration}ms)`);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[VideoDropper-Error] Response body: ${errText}`);
+        throw new Error(`VideoDropper API HTTP ${response.status}: ${errText}`);
+      }
+
+      const responseData = await response.json();
+      console.log(`[VideoDropper-Success] Response Data: ${JSON.stringify(responseData).substring(0, 500)}`);
+
+      const data = responseData.data || responseData.result || responseData;
+      const title = data.title || data.caption || 'Instagram Reel';
+      const audioUrl = data.audioUrl || data.audio_url || data.downloadUrl || data.download_url || data.url;
+      const thumbnail = data.thumbnail || data.coverUrl || '';
+      const videoDuration = data.duration || 0;
+      const author = data.author || data.username || 'Instagram User';
+
+      if (!audioUrl) {
+        throw new Error('VideoDropper API response did not contain a valid audio download URL');
+      }
+
+      const resultData = {
+        title,
+        audioUrl,
+        thumbnail,
+        duration: videoDuration,
+        author,
+      };
+
+      instagramCache.set(cacheKey, {
+        data: resultData,
+        expiryTime: Date.now() + CACHE_TTL_MS,
+      });
+
+      return resultData;
+    } catch (err) {
+      lastError = err;
+      console.warn(`[VideoDropper-Attempt-Failed] Attempt ${attempt} failed: ${err.message}`);
+      
+      if (attempt < maxRetries) {
+        const backoffDelay = 1000 * Math.pow(2, attempt - 1);
+        console.log(`[VideoDropper-Backoff] Waiting ${backoffDelay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, backoffDelay));
+      }
+    }
+  }
+
+  throw new Error(`VideoDropper extraction failed after ${maxRetries} attempts: ${lastError.message}`);
+}
+
 class ConcurrencyPool {
   constructor(maxConcurrent) {
     this.maxConcurrent = maxConcurrent;
@@ -161,22 +283,30 @@ async function extractAudio(url, jobId, quality = 'high') {
         console.log(`[Extractor] Job ${jobId} resolved query to: ${url}`);
       }
 
-      try {
-        // Step 1: Download with yt-dlp
-        console.log(`[Extractor] Downloading video from: ${url}`);
-        const downloadResult = await downloadWithYtDlp(url, videoPath, jobId);
-        title = downloadResult.title || title;
-        
-        // Step 2: Extract audio with ffmpeg
-        console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadResult.downloadedPath}`);
-        await extractWithFfmpeg(downloadResult.downloadedPath, audioPath, quality, jobId);
-        
-      } catch (err) {
-        if (err.message.includes('requires sign-in') || err.message.includes('bot challenge') || err.message.includes('Sign in to confirm')) {
-          console.warn(`[Extractor] yt-dlp blocked by YouTube. Falling back to Cobalt API...`);
-          title = await downloadWithCobalt(url, audioPath);
-        } else {
-          throw err;
+      if (isInstagramUrl(url)) {
+        console.log(`[Extractor] Job ${jobId} identified as Instagram URL. Using VideoDropper...`);
+        const vdResult = await fetchFromVideoDropperWithRetry(url);
+        title = vdResult.title;
+        console.log(`[Extractor] Downloading audio from VideoDropper direct link: ${vdResult.audioUrl}`);
+        await downloadFileDirectly(vdResult.audioUrl, audioPath);
+      } else {
+        try {
+          // Step 1: Download with yt-dlp
+          console.log(`[Extractor] Downloading video from: ${url}`);
+          const downloadResult = await downloadWithYtDlp(url, videoPath, jobId);
+          title = downloadResult.title || title;
+          
+          // Step 2: Extract audio with ffmpeg
+          console.log(`[Extractor] Extracting audio (${quality}) from: ${downloadResult.downloadedPath}`);
+          await extractWithFfmpeg(downloadResult.downloadedPath, audioPath, quality, jobId);
+          
+        } catch (err) {
+          if (err.message.includes('requires sign-in') || err.message.includes('bot challenge') || err.message.includes('Sign in to confirm')) {
+            console.warn(`[Extractor] yt-dlp blocked by YouTube. Falling back to Cobalt API...`);
+            title = await downloadWithCobalt(url, audioPath);
+          } else {
+            throw err;
+          }
         }
       }
 

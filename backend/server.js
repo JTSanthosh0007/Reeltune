@@ -110,11 +110,12 @@ app.use((err, req, res, next) => {
   console.error(`[EXCEPTION] [${timestamp}] ${req.method} ${req.url} | Error: ${err.message}`);
   console.error(err.stack);
 
+  const isProd = process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production';
   res.status(err.statusCode || 500).json({
     success: false,
-    error_code: 'INTERNAL_ERROR',
+    error_code: err.errorCode || 'INTERNAL_ERROR',
     message: err.message || 'Internal server error',
-    details: err.stack,
+    ...(isProd ? {} : { details: err.stack }),
   });
 });
 

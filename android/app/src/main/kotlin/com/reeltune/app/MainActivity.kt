@@ -20,6 +20,7 @@ class MainActivity : AudioServiceActivity() {
     private val SHARING_CHANNEL = "com.reeltune.app/sharing"
     private var sharedText: String? = null
     private var methodChannel: MethodChannel? = null
+    private var shouldOpenQueue: Boolean = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -35,6 +36,10 @@ class MainActivity : AudioServiceActivity() {
                 "getSharedText" -> {
                     result.success(sharedText)
                     sharedText = null // Consume it
+                }
+                "shouldOpenQueue" -> {
+                    result.success(shouldOpenQueue)
+                    shouldOpenQueue = false // Consume it
                 }
                 "checkOverlayPermission" -> {
                     result.success(checkOverlayPermission())
@@ -79,6 +84,10 @@ class MainActivity : AudioServiceActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        if (intent.getStringExtra("navigate_to") == "queue") {
+            shouldOpenQueue = true
+            methodChannel?.invokeMethod("onNavigateToQueue", null)
+        }
         if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT)
             sharedText = text

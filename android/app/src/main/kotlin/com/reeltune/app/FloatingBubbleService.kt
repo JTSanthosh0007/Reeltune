@@ -205,6 +205,7 @@ class FloatingBubbleService : Service() {
                             // On click: Open MainActivity
                             val intent = Intent(this@FloatingBubbleService, MainActivity::class.java).apply {
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                putExtra("navigate_to", "queue")
                             }
                             startActivity(intent)
                             stopSelf()

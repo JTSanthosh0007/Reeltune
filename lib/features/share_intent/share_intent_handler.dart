@@ -7,6 +7,7 @@ import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 
 import '../../core/network/extraction_service.dart';
 import '../../core/theme/app_colors.dart';
+import '../home/main_navigation_screen.dart'; // import navigationIndexProvider
 import '../queue/queue_provider.dart';
 import 'share_overlay_bridge.dart';
 
@@ -18,6 +19,10 @@ final shareIntentHandlerProvider =
 class ShareIntentState {
   final bool initialized;
   const ShareIntentState({this.initialized = false});
+}
+
+class ShareIntentStateNotifier extends StateNotifier<ShareIntentState> {
+  ShareIntentStateNotifier() : super(const ShareIntentState());
 }
 
 class ShareIntentHandler extends StateNotifier<ShareIntentState> {
@@ -44,6 +49,16 @@ class ShareIntentHandler extends StateNotifier<ShareIntentState> {
         if (text != null) {
           _handleSharedText(text);
         }
+      } else if (call.method == "onNavigateToQueue") {
+        // Switch global Riverpod tab to Queue!
+        _ref.read(navigationIndexProvider.notifier).state = 1;
+      }
+    });
+
+    // Check on startup if we should navigate directly to the Queue tab
+    _sharingChannel.invokeMethod<bool>("shouldOpenQueue").then((shouldOpen) {
+      if (shouldOpen == true) {
+        _ref.read(navigationIndexProvider.notifier).state = 1;
       }
     });
 

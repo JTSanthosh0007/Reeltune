@@ -12,49 +12,70 @@ final extractionServiceProvider = Provider<ExtractionService>((ref) {
 /// Represents the state of an extraction job
 class ExtractionJob {
   final String jobId;
-  final ExtractionStatus status;
+  final String status;
+  final String stage;
+  final double progress;
   final String? downloadUrl;
   final String? error;
   final String? title;
+  final String? artist;
+  final String? thumbnail;
+  final int? duration;
 
   const ExtractionJob({
     required this.jobId,
     required this.status,
+    required this.stage,
+    required this.progress,
     this.downloadUrl,
     this.error,
     this.title,
+    this.artist,
+    this.thumbnail,
+    this.duration,
   });
 
   factory ExtractionJob.fromJson(Map<String, dynamic> json) {
+    final meta = json['metadata'] as Map<String, dynamic>?;
     return ExtractionJob(
       jobId: (json['jobId'] ?? json['id'] ?? '').toString(),
-      status: ExtractionStatus.fromString((json['status'] ?? 'pending').toString()),
+      status: (json['status'] ?? 'pending').toString(),
+      stage: (json['stage'] ?? 'queued').toString(),
+      progress: (json['progress'] as num? ?? 0.0).toDouble() / 100.0,
       downloadUrl: json['downloadUrl'] as String?,
       error: json['error'] as String?,
-      title: json['title'] as String?,
+      title: (meta?['title'] ?? json['title']) as String?,
+      artist: meta?['artist'] as String?,
+      thumbnail: meta?['thumbnail'] as String?,
+      duration: (meta?['duration'] as num?)?.toInt(),
     );
   }
 }
 
-enum ExtractionStatus {
-  pending,
-  processing,
-  completed,
-  failed;
+class SubmitResponse {
+  final String jobId;
+  final String title;
+  final String artist;
+  final String thumbnail;
+  final int duration;
 
-  static ExtractionStatus fromString(String value) {
-    switch (value) {
-      case 'pending':
-        return ExtractionStatus.pending;
-      case 'processing':
-        return ExtractionStatus.processing;
-      case 'completed':
-        return ExtractionStatus.completed;
-      case 'failed':
-        return ExtractionStatus.failed;
-      default:
-        return ExtractionStatus.pending;
-    }
+  SubmitResponse({
+    required this.jobId,
+    required this.title,
+    required this.artist,
+    required this.thumbnail,
+    required this.duration,
+  });
+
+  factory SubmitResponse.fromJson(Map<String, dynamic> json) {
+    final meta = json['metadata'] as Map<String, dynamic>?;
+    return SubmitResponse(
+      jobId: (json['jobId'] ?? '').toString(),
+      title: (meta?['title'] ?? 'Loading metadata...').toString(),
+      artist: (meta?['artist'] ?? 'Please wait...').toString(),
+      thumbnail: (meta?['thumbnail'] ?? '').toString(),
+      duration: (meta?['duration'] as num? ?? 180000).toInt(),
+    );
   }
 }
 
@@ -76,7 +97,7 @@ class ExtractionService {
   }
 
   /// Submit a URL for audio extraction
-  Future<String> submitExtraction(String url, {String? quality}) async {
+  Future<SubmitResponse> submitExtraction(String url, {String? quality}) async {
     final deviceId = await _getDeviceId();
 
     final response = await _apiClient.post<Map<String, dynamic>>(
@@ -93,7 +114,7 @@ class ExtractionService {
       throw ApiException('Invalid response from server', null);
     }
 
-    return data['jobId'] as String;
+    return SubmitResponse.fromJson(data);
   }
 
   /// Poll the status of an extraction job

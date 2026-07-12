@@ -1,22 +1,25 @@
+import 'package:flutter/foundation.dart';
 import 'environment.dart';
 
 class BuildConfig {
   BuildConfig._();
 
   // Read compile-time dart-defines
-  static const String _env = String.fromEnvironment('APP_ENV', defaultValue: 'development');
+  static const String _env = String.fromEnvironment('APP_ENV', defaultValue: '');
   static const bool _useTestAds = bool.fromEnvironment('USE_TEST_ADS', defaultValue: true);
 
   static AppEnv get environment {
-    switch (_env.toLowerCase()) {
-      case 'production':
-        return AppEnv.production;
-      case 'testing':
-        return AppEnv.testing;
-      case 'development':
-      default:
-        return AppEnv.development;
+    if (_env.isNotEmpty) {
+      switch (_env.toLowerCase()) {
+        case 'production':
+          return AppEnv.production;
+        case 'testing':
+          return AppEnv.testing;
+        case 'development':
+          return AppEnv.development;
+      }
     }
+    return kReleaseMode ? AppEnv.production : AppEnv.development;
   }
 
   static bool get useTestAds => _useTestAds;

@@ -8,7 +8,7 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>((r
 });
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
-  ThemeModeNotifier() : super(ThemeMode.dark) {
+  ThemeModeNotifier() : super(ThemeMode.system) {
     _loadTheme();
   }
 
@@ -20,6 +20,8 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
         (e) => e.toString() == themeString,
         orElse: () => ThemeMode.system,
       );
+    } else {
+      state = ThemeMode.system;
     }
   }
 

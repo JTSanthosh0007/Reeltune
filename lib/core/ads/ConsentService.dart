@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -12,6 +13,11 @@ class ConsentNotifier extends StateNotifier<bool> {
   }
 
   Future<void> initConsent() async {
+    if (kDebugMode) {
+      debugPrint('[ConsentService] Bypassing UMP Consent check in Debug Mode.');
+      state = true;
+      return;
+    }
     // Under COPPA, or if consent is not required/obtained, we handle loading safely.
     final params = ConsentRequestParameters(
       tagForUnderAgeOfConsent: false,

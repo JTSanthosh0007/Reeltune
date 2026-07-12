@@ -5,6 +5,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'AdManager.dart';
 import 'ConsentService.dart';
 import 'InterstitialService.dart';
+import 'AdFreeService.dart';
 
 // Provider to manage premium unlock state (e.g. granted via Rewarded Ads)
 final premiumFeaturesProvider = StateNotifierProvider<PremiumFeaturesNotifier, bool>((ref) {
@@ -109,6 +110,7 @@ class RewardedService {
       onUserEarnedReward: (adWithoutView, reward) {
         rewardVerified = true;
         debugPrint('User earned reward: ${reward.amount} ${reward.type}');
+        _ref.read(adFreeProvider.notifier).grantAdFreeDuration(const Duration(hours: 24));
         onRewardGranted(reward);
       },
     );

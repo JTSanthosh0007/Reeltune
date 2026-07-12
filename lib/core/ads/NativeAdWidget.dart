@@ -7,6 +7,7 @@ import '../theme/app_colors.dart';
 import 'AdManager.dart';
 import 'ConsentService.dart';
 import 'InterstitialService.dart';
+import 'AdFreeService.dart';
 
 class NativeAdWidget extends ConsumerStatefulWidget {
   const NativeAdWidget({super.key});

@@ -32,6 +32,21 @@ class QueueRepository {
     );
   }
 
+  Future<void> updateMetadata(String id, String title, String artist, String thumbnail, int duration) async {
+    final db = await _dbHelper.database;
+    await db.update(
+      'download_queue',
+      {
+        'title': title,
+        'artist': artist,
+        'thumbnail': thumbnail,
+        'duration': duration,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   Future<void> updateStatusAndProgress(String id, String status, double progress, {String? error}) async {
     final db = await _dbHelper.database;
     final Map<String, dynamic> values = {

@@ -12,6 +12,8 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -23,6 +25,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 
 class FloatingBubbleService : Service() {
+    private val TAG = "ReelTune-BubbleService"
 
     private lateinit var windowManager: WindowManager
     private var floatingView: FrameLayout? = null
@@ -35,53 +38,114 @@ class FloatingBubbleService : Service() {
         private var instance: FloatingBubbleService? = null
 
         fun updateBadge(count: Int) {
-            activeBadgeCount = count
-            instance?.badgeTextView?.post {
-                if (count <= 0) {
-                    instance?.stopSelf()
-                } else {
-                    instance?.badgeTextView?.text = count.toString()
-                    instance?.badgeTextView?.visibility = View.VISIBLE
+            try {
+                activeBadgeCount = count
+                instance?.badgeTextView?.post {
+                    try {
+                        if (count <= 0) {
+                            instance?.badgeTextView?.visibility = View.GONE
+                        } else {
+                            instance?.badgeTextView?.text = count.toString()
+                            instance?.badgeTextView?.visibility = View.VISIBLE
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ReelTune-BubbleService", "Error updating badge UI: ${e.message}", e)
+                    }
                 }
+            } catch (e: Exception) {
+                Log.e("ReelTune-BubbleService", "Error in updateBadge: ${e.message}", e)
             }
         }
         
         fun dismiss() {
-            instance?.stopSelf()
+            try {
+                instance?.stopSelf()
+            } catch (e: Exception) {
+                Log.e("ReelTune-BubbleService", "Error dismissing bubble: ${e.message}", e)
+            }
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val badge = intent?.getIntExtra("badge_count", 1) ?: 1
-        activeBadgeCount = badge
-        updateBadge(badge)
+        try {
+            val badge = intent?.getIntExtra("badge_count", 1) ?: 1
+            activeBadgeCount = badge
+            updateBadge(badge)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in onStartCommand: ${e.message}", e)
+        }
         return START_STICKY
     }
 
     override fun onCreate() {
         super.onCreate()
-        isRunning = true
-        instance = this
-        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        
-        createNotificationChannel()
-        startForeground(9999, getNotification())
-        
-        showBubble()
-        Toast.makeText(this, "Saved to Queue ✓", Toast.LENGTH_SHORT).show()
+        try {
+            isRunning = true
+            instance = this
+            windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            
+            createNotificationChannel()
+            
+            try {
+                startForeground(9999, getNotification())
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
+                // On Android 14+ this can throw ForegroundServiceStartNotAllowedException
+                // Stop self gracefully instead of crashing
+                stopSelf()
+                return
+            }
+            
+            if (checkOverlayPermission()) {
+                try {
+                    showBubble()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to show bubble overlay: ${e.message}", e)
+                }
+            } else {
+                Log.d(TAG, "No overlay permission, running as background service only")
+            }
+            
+            try {
+                Toast.makeText(this, "Saved to Queue ✓", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to show toast: ${e.message}", e)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "CRITICAL: onCreate crashed: ${e.message}", e)
+            isRunning = false
+            instance = null
+            try { stopSelf() } catch (_: Exception) {}
+        }
+    }
+
+    private fun checkOverlayPermission(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Settings.canDrawOverlays(this)
+            } else {
+                true
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(
-                CHANNEL_ID,
-                "ReelTune Background Downloader",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(serviceChannel)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val serviceChannel = NotificationChannel(
+                    CHANNEL_ID,
+                    "ReelTune Background Downloader",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                val manager = getSystemService(NotificationManager::class.java)
+                manager?.createNotificationChannel(serviceChannel)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create notification channel: ${e.message}", e)
         }
     }
 
@@ -155,6 +219,7 @@ class FloatingBubbleService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             } else {
+                @Suppress("DEPRECATION")
                 WindowManager.LayoutParams.TYPE_PHONE
             },
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -176,55 +241,68 @@ class FloatingBubbleService : Service() {
 
             override fun onTouch(v: View?, event: MotionEvent?): Boolean {
                 if (event == null) return false
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        initialX = params.x
-                        initialY = params.y
-                        initialTouchX = event.rawX
-                        initialTouchY = event.rawY
-                        isClick = true
-                        return true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val dx = (event.rawX - initialTouchX).toInt()
-                        val dy = (event.rawY - initialTouchY).toInt()
-                        
-                        if (Math.abs(dx) > CLICK_ACTION_THRESHOLD || Math.abs(dy) > CLICK_ACTION_THRESHOLD) {
-                            isClick = false
+                try {
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            initialX = params.x
+                            initialY = params.y
+                            initialTouchX = event.rawX
+                            initialTouchY = event.rawY
+                            isClick = true
+                            return true
                         }
-                        
-                        params.x = initialX + dx
-                        params.y = initialY + dy
-                        try {
-                            windowManager.updateViewLayout(floatingView, params)
-                        } catch (e: Exception) {}
-                        return true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (isClick) {
-                            // On click: Open MainActivity
-                            val intent = Intent(this@FloatingBubbleService, MainActivity::class.java).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                putExtra("navigate_to", "queue")
+                        MotionEvent.ACTION_MOVE -> {
+                            val dx = (event.rawX - initialTouchX).toInt()
+                            val dy = (event.rawY - initialTouchY).toInt()
+                            
+                            if (Math.abs(dx) > CLICK_ACTION_THRESHOLD || Math.abs(dy) > CLICK_ACTION_THRESHOLD) {
+                                isClick = false
                             }
-                            startActivity(intent)
-                            stopSelf()
-                        } else {
-                            // Snap to nearest edge (left or right)
-                            val screenWidth = windowManager.defaultDisplay.width
-                            val bubbleWidth = v?.width ?: 0
-                            val targetX = if (params.x + bubbleWidth / 2 < screenWidth / 2) {
-                                dpToPx(8)
-                            } else {
-                                screenWidth - bubbleWidth - dpToPx(8)
-                            }
-                            params.x = targetX
+                            
+                            params.x = initialX + dx
+                            params.y = initialY + dy
                             try {
                                 windowManager.updateViewLayout(floatingView, params)
-                            } catch (e: Exception) {}
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error updating view layout on move: ${e.message}")
+                            }
+                            return true
                         }
-                        return true
+                        MotionEvent.ACTION_UP -> {
+                            if (isClick) {
+                                // On click: Open MainActivity and navigate to queue
+                                try {
+                                    val intent = Intent(this@FloatingBubbleService, MainActivity::class.java).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        putExtra("navigate_to", "queue")
+                                    }
+                                    startActivity(intent)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error launching MainActivity: ${e.message}", e)
+                                }
+                                stopSelf()
+                            } else {
+                                // Snap to nearest edge (left or right)
+                                try {
+                                    val displayMetrics = resources.displayMetrics
+                                    val screenWidth = displayMetrics.widthPixels
+                                    val bubbleWidth = v?.width ?: 0
+                                    val targetX = if (params.x + bubbleWidth / 2 < screenWidth / 2) {
+                                        dpToPx(8)
+                                    } else {
+                                        screenWidth - bubbleWidth - dpToPx(8)
+                                    }
+                                    params.x = targetX
+                                    windowManager.updateViewLayout(floatingView, params)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "Error snapping to edge: ${e.message}")
+                                }
+                            }
+                            return true
+                        }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error in touch handler: ${e.message}", e)
                 }
                 return false
             }
@@ -233,7 +311,8 @@ class FloatingBubbleService : Service() {
         try {
             windowManager.addView(floatingView, params)
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "CRITICAL: Failed to add floating view to WindowManager: ${e.message}", e)
+            throw e // Re-throw so onCreate can handle it
         }
     }
 
@@ -249,7 +328,9 @@ class FloatingBubbleService : Service() {
         floatingView?.let {
             try {
                 windowManager.removeView(it)
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing floating view: ${e.message}")
+            }
         }
     }
 }

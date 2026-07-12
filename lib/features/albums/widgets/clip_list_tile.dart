@@ -64,7 +64,9 @@ class ClipListTile extends StatelessWidget {
                     Text(
                       clip.title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: AppColors.textPrimary,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white
+                                : AppColors.textPrimary,
                           ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

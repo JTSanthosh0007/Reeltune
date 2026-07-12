@@ -27,57 +27,45 @@ class AdMobConfig {
   }
 
   static String get bannerAdUnitId {
-    if (BuildConfig.useTestAds) {
-      return Platform.isAndroid ? _androidTestBanner : _iosTestBanner;
-    }
     final key = Platform.isAndroid ? 'ADMOB_BANNER_ID_ANDROID' : 'ADMOB_BANNER_ID_IOS';
     final val = _envKeys[key] ?? '';
-    return val.isNotEmpty ? val : (Platform.isAndroid ? _androidTestBanner : _iosTestBanner);
+    if (val.isNotEmpty) return val;
+    return Platform.isAndroid ? _androidTestBanner : _iosTestBanner;
   }
 
   static String get interstitialAdUnitId {
-    if (BuildConfig.useTestAds) {
-      return Platform.isAndroid ? _androidTestInterstitial : _iosTestInterstitial;
-    }
     final key = Platform.isAndroid ? 'ADMOB_INTERSTITIAL_ID_ANDROID' : 'ADMOB_INTERSTITIAL_ID_IOS';
     final val = _envKeys[key] ?? '';
-    return val.isNotEmpty ? val : (Platform.isAndroid ? _androidTestInterstitial : _iosTestInterstitial);
+    if (val.isNotEmpty) return val;
+    return Platform.isAndroid ? _androidTestInterstitial : _iosTestInterstitial;
   }
 
   static String get rewardedAdUnitId {
-    if (BuildConfig.useTestAds) {
-      return Platform.isAndroid ? _androidTestRewarded : _iosTestRewarded;
-    }
     final key = Platform.isAndroid ? 'ADMOB_REWARDED_ID_ANDROID' : 'ADMOB_REWARDED_ID_IOS';
     final val = _envKeys[key] ?? '';
-    return val.isNotEmpty ? val : (Platform.isAndroid ? _androidTestRewarded : _iosTestRewarded);
+    if (val.isNotEmpty) return val;
+    return Platform.isAndroid ? _androidTestRewarded : _iosTestRewarded;
   }
 
   static String get rewardedInterstitialAdUnitId {
-    if (BuildConfig.useTestAds) {
-      return Platform.isAndroid ? _androidTestRewardedInterstitial : _iosTestRewardedInterstitial;
-    }
     final key = Platform.isAndroid ? 'ADMOB_REWARDED_INTERSTITIAL_ID_ANDROID' : 'ADMOB_REWARDED_INTERSTITIAL_ID_IOS';
     final val = _envKeys[key] ?? '';
-    return val.isNotEmpty ? val : (Platform.isAndroid ? _androidTestRewardedInterstitial : _iosTestRewardedInterstitial);
+    if (val.isNotEmpty) return val;
+    return Platform.isAndroid ? _androidTestRewardedInterstitial : _iosTestRewardedInterstitial;
   }
 
   static String get nativeAdUnitId {
-    if (BuildConfig.useTestAds) {
-      return Platform.isAndroid ? _androidTestNative : _iosTestNative;
-    }
     final key = Platform.isAndroid ? 'ADMOB_NATIVE_ID_ANDROID' : 'ADMOB_NATIVE_ID_IOS';
     final val = _envKeys[key] ?? '';
-    return val.isNotEmpty ? val : (Platform.isAndroid ? _androidTestNative : _iosTestNative);
+    if (val.isNotEmpty) return val;
+    return Platform.isAndroid ? _androidTestNative : _iosTestNative;
   }
 
   static String get appOpenAdUnitId {
-    if (BuildConfig.useTestAds) {
-      return Platform.isAndroid ? _androidTestAppOpen : _iosTestAppOpen;
-    }
     final key = Platform.isAndroid ? 'ADMOB_APP_OPEN_ID_ANDROID' : 'ADMOB_APP_OPEN_ID_IOS';
     final val = _envKeys[key] ?? '';
-    return val.isNotEmpty ? val : (Platform.isAndroid ? _androidTestAppOpen : _iosTestAppOpen);
+    if (val.isNotEmpty) return val;
+    return Platform.isAndroid ? _androidTestAppOpen : _iosTestAppOpen;
   }
 
   static String get appId {

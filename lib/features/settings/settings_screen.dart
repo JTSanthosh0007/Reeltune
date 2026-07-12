@@ -14,6 +14,7 @@ import '../../core/storage/file_storage_service.dart';
 import '../../core/ads/ConsentService.dart';
 import '../../core/ads/RewardedService.dart';
 import '../../core/ads/InterstitialService.dart';
+import '../../core/ads/AdFreeService.dart';
 import '../../core/db/clip_repository.dart';
 import '../albums/album_providers.dart';
 import '../player/player_provider.dart';
@@ -393,9 +394,9 @@ class SettingsScreen extends ConsumerWidget {
                             context,
                             icon: Icons.card_giftcard_rounded,
                             iconColor: Colors.amber,
-                            title: isAdFree ? 'Ad-free Premium Active' : 'Sponsor Ad-Free (1 Hour)',
+                            title: isAdFree ? 'Ad-free Premium Active' : 'Sponsor Ad-Free (24 Hours)',
                             subtitle: isAdFree
-                                ? 'Enjoy premium ad-free experience!'
+                                ? 'Remaining: ${ref.watch(adFreeRemainingProvider).value ?? "Calculating..."} 🎉'
                                 : 'Watch a short ad to support and remove ads',
                             onTap: isAdFree
                                 ? null
@@ -403,12 +404,9 @@ class SettingsScreen extends ConsumerWidget {
                                     ref.read(rewardedServiceProvider).showRewardedAd(
                                           context: context,
                                           onRewardGranted: (reward) {
-                                            ref
-                                                .read(adFreeProvider.notifier)
-                                                .setAdFreeForDuration(const Duration(hours: 1));
                                             ScaffoldMessenger.of(context).showSnackBar(
                                               const SnackBar(
-                                                content: Text('Ads removed for 1 hour! Enjoy! 🎉'),
+                                                content: Text('Ads removed for 24 hours! Enjoy! 🎉'),
                                                 backgroundColor: AppColors.primary,
                                               ),
                                             );

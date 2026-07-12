@@ -169,14 +169,27 @@ class _QueueScreenState extends ConsumerState<QueueScreen> with SingleTickerProv
   }
 
   Widget _buildFilteredList(List<QueueItem> items, String filter, bool isDark) {
-    // 1. Filter items
     var list = items;
     if (filter == 'pending') {
-      list = items.where((i) => i.status == 'pending' || i.status == 'paused').toList();
+      list = items.where((i) => 
+        i.status == 'queued' || 
+        i.status == 'pending' || 
+        i.status == 'paused'
+      ).toList();
     } else if (filter == 'downloading') {
-      list = items.where((i) => i.status == 'downloading').toList();
+      list = items.where((i) => 
+        i.status == 'preparing' || 
+        i.status == 'fetching_metadata' || 
+        i.status == 'extracting_audio' || 
+        i.status == 'generating_download_link' || 
+        i.status == 'downloading' || 
+        i.status == 'saving'
+      ).toList();
     } else if (filter == 'completed') {
-      list = items.where((i) => i.status == 'completed' || i.status == 'failed').toList();
+      list = items.where((i) => 
+        i.status == 'completed' || 
+        i.status == 'failed'
+      ).toList();
     }
 
     if (list.isEmpty) {
@@ -239,6 +252,62 @@ class _QueueCard extends ConsumerWidget {
     required this.isDark,
   });
 
+  String _getStageText(QueueItem item) {
+    switch (item.status) {
+      case 'queued':
+      case 'pending':
+        return 'Queued';
+      case 'preparing':
+        return 'Preparing';
+      case 'fetching_metadata':
+        return 'Fetching Metadata...';
+      case 'extracting_audio':
+        return 'Extracting Audio...';
+      case 'generating_download_link':
+        return 'Generating Download Link...';
+      case 'downloading':
+        return 'Downloading: ${(item.progress * 100).toStringAsFixed(0)}%';
+      case 'saving':
+        return 'Saving to Library...';
+      case 'completed':
+        return 'Completed';
+      case 'failed':
+        return 'Failed: ${item.error ?? "Failed"}';
+      case 'paused':
+        return 'Paused';
+      default:
+        return item.status.toUpperCase();
+    }
+  }
+
+  Color _getStageColor(QueueItem item) {
+    switch (item.status) {
+      case 'queued':
+      case 'pending':
+        return const Color(0xFF6B7280); // Gray
+      case 'preparing':
+        return const Color(0xFF6366F1); // Indigo
+      case 'fetching_metadata':
+        return const Color(0xFF0284C7); // Blue
+      case 'extracting_audio':
+        return const Color(0xFFA855F7); // Purple
+      case 'generating_download_link':
+        return const Color(0xFFD97706); // Orange/Amber
+      case 'downloading':
+        return const Color(0xFF10B981); // Emerald Green
+      case 'saving':
+        return const Color(0xFF0D9488); // Teal
+      case 'completed':
+        return const Color(0xFF19D38A); // Bright Green
+      case 'failed':
+        return const Color(0xFFEF4444); // Red
+      case 'paused':
+        return const Color(0xFFF59E0B); // Amber
+      default:
+        return const Color(0xFF19D38A);
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     IconData platformIcon = Icons.link_rounded;
@@ -272,10 +341,12 @@ class _QueueCard extends ConsumerWidget {
         break;
     }
 
-    final isDownloading = item.status == 'downloading';
-    final isPending = item.status == 'pending';
+    final isQueued = item.status == 'queued' || item.status == 'pending';
     final isFailed = item.status == 'failed';
     final isPaused = item.status == 'paused';
+    final isCompleted = item.status == 'completed';
+    
+    final isActive = !isQueued && !isFailed && !isPaused && !isCompleted;
 
     return Container(
       decoration: BoxDecoration(
@@ -290,17 +361,58 @@ class _QueueCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Row for metadata and actions
             Row(
               children: [
-                // Platform circular container
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: platformColor.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(platformIcon, color: platformColor, size: 20),
+                // Thumbnail / Cover Art with tiny Platform Badge
+                Stack(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: isDark ? const Color(0xFF222222) : Colors.grey[200],
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: item.thumbnail != null && item.thumbnail!.isNotEmpty
+                          ? Image.network(
+                              item.thumbnail!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Center(
+                                child: Icon(platformIcon, color: platformColor, size: 22),
+                              ),
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const Center(
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                );
+                              },
+                            )
+                          : Center(
+                              child: Icon(platformIcon, color: platformColor, size: 22),
+                            ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF171717) : Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isDark ? const Color(0xFF171717) : Colors.white,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Icon(platformIcon, color: platformColor, size: 10),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(width: 12),
 
@@ -310,7 +422,7 @@ class _QueueCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        item.title ?? 'Processing Link...',
+                        item.title ?? 'Loading metadata...',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
@@ -321,7 +433,7 @@ class _QueueCard extends ConsumerWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        item.artist ?? 'ReelTune Queue',
+                        item.artist ?? 'Please wait...',
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? const Color(0xFFA0A0A0) : AppColors.textSecondary,
@@ -334,13 +446,13 @@ class _QueueCard extends ConsumerWidget {
                 ),
 
                 // Trailing controls (Circular progress or buttons)
-                if (isDownloading)
+                if (isActive)
                   SizedBox(
                     width: 32,
                     height: 32,
                     child: CircularProgressIndicator(
                       value: item.progress > 0 ? item.progress : null,
-                      color: const Color(0xFF19D38A),
+                      color: _getStageColor(item),
                       strokeWidth: 3,
                     ),
                   )
@@ -348,8 +460,7 @@ class _QueueCard extends ConsumerWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Priority increase button
-                      if (isPending)
+                      if (isQueued)
                         IconButton(
                           icon: Icon(
                             item.priority > 0 ? Icons.star_rounded : Icons.star_outline_rounded,
@@ -364,7 +475,6 @@ class _QueueCard extends ConsumerWidget {
                           constraints: const BoxConstraints(),
                           padding: const EdgeInsets.all(8),
                         ),
-                      // Action state button
                       IconButton(
                         icon: Icon(
                           isPaused
@@ -380,14 +490,13 @@ class _QueueCard extends ConsumerWidget {
                             notifier.resumeDownload(item.id);
                           } else if (isFailed) {
                             notifier.retryDownload(item.id);
-                          } else if (isPending) {
+                          } else if (isQueued) {
                             notifier.pauseDownload(item.id);
                           }
                         },
                         constraints: const BoxConstraints(),
                         padding: const EdgeInsets.all(8),
                       ),
-                      // Cancel/Delete
                       IconButton(
                         icon: Icon(Icons.delete_outline_rounded, color: isDark ? Colors.white54 : AppColors.textTertiary),
                         onPressed: () {
@@ -401,26 +510,25 @@ class _QueueCard extends ConsumerWidget {
               ],
             ),
 
-            // Progress text, estimated times, or error details below
-            if (isDownloading || isFailed) ...[
+            // Progress text and error details
+            if (isActive || isFailed || isQueued) ...[
               const SizedBox(height: 10),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Expanded(
                     child: Text(
-                      isDownloading
-                          ? 'Downloading: ${(item.progress * 100).toStringAsFixed(0)}%${item.retries > 0 ? " (Retry ${item.retries}/3)" : ""}'
-                          : 'Failed: ${item.error ?? "Extraction failed"}${item.retries > 0 ? " (Tried ${item.retries} times)" : ""}',
+                      _getStageText(item),
                       style: TextStyle(
                         fontSize: 12,
-                        color: isFailed ? AppColors.error : const Color(0xFF19D38A),
+                        color: _getStageColor(item),
+                        fontWeight: FontWeight.w600,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  if (isDownloading) ...[
+                  if (item.status == 'downloading' && item.speed > 0) ...[
                     const SizedBox(width: 8),
                     Text(
                       '${item.speed >= 1024 ? (item.speed / 1024).toStringAsFixed(1) : item.speed.toStringAsFixed(0)} ${item.speed >= 1024 ? "MB/s" : "KB/s"} • ETA ${item.eta}s',
@@ -430,14 +538,31 @@ class _QueueCard extends ConsumerWidget {
                 ],
               ),
             ],
-            if (isDownloading) ...[
+            if (isFailed && item.error != null) ...[
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => ref.read(queueProvider.notifier).retryDownload(item.id),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Tap to Retry',
+                    style: TextStyle(color: AppColors.error, fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+            if (isActive) ...[
               const SizedBox(height: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
                 child: LinearProgressIndicator(
                   value: item.progress > 0 ? item.progress : null,
                   backgroundColor: isDark ? Colors.white10 : AppColors.surfaceBorder,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF19D38A)),
+                  valueColor: AlwaysStoppedAnimation<Color>(_getStageColor(item)),
                   minHeight: 4,
                 ),
               ),

@@ -7,6 +7,7 @@ import '../../features/share_intent/share_intent_provider.dart';
 import 'AdManager.dart';
 import 'ConsentService.dart';
 import 'InterstitialService.dart';
+import 'AdFreeService.dart';
 
 final appOpenServiceProvider = Provider<AppOpenService>((ref) {
   return AppOpenService(ref);

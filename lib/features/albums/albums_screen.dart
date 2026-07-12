@@ -19,6 +19,7 @@ import '../share_intent/share_intent_provider.dart';
 import '../share_intent/widgets/extraction_bottom_sheet.dart';
 import '../../core/ads/NativeAdWidget.dart';
 import '../../core/ads/InterstitialService.dart';
+import '../../core/ads/AdFreeService.dart';
 import '../library/PlaylistsProvider.dart';
 import '../library/playlist_detail_screen.dart';
 import '../library/favorites_screen.dart';
@@ -138,12 +139,56 @@ class AlbumsScreen extends ConsumerWidget {
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
-                        child: Text(
-                          'Your Library',
-                          style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : AppColors.textPrimary,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Your Library',
+                              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : AppColors.textPrimary,
+                                  ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                if (selectedTab == 0) {
+                                  _showCreateAlbumDialog(context, ref);
+                                } else {
+                                  _showCreatePlaylistDialog(context, ref);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                decoration: BoxDecoration(
+                                  color: isDark ? AppColors.primary.withValues(alpha: 0.25) : AppColors.primary.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: AppColors.primary.withValues(alpha: 0.3),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.add_rounded,
+                                      size: 18,
+                                      color: AppColors.primary,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      selectedTab == 0 ? 'New Album' : 'New Playlist',
+                                      style: const TextStyle(
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -205,19 +250,6 @@ class AlbumsScreen extends ConsumerWidget {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          if (selectedTab == 0) {
-            _showCreateAlbumDialog(context, ref);
-          } else {
-            _showCreatePlaylistDialog(context, ref);
-          }
-        },
-        icon: const Icon(Icons.add_rounded),
-        label: Text(selectedTab == 0 ? 'New Album' : 'New Playlist'),
-      )
-          .animate()
-          .scale(delay: 500.ms, duration: 400.ms, curve: Curves.elasticOut),
     );
   }
 

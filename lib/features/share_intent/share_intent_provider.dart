@@ -149,7 +149,8 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
       }
 
       // Submit extraction job
-      final jobId = await extractionService.submitExtraction(url, quality: cleanQuality);
+      final submitResponse = await extractionService.submitExtraction(url, quality: cleanQuality);
+      final jobId = submitResponse.jobId;
       state = state.copyWith(
         step: ExtractionStep.extracting,
         jobId: jobId,
@@ -191,10 +192,10 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
         final job = await extractionService.pollStatus(jobId);
 
         switch (job.status) {
-          case ExtractionStatus.completed:
+          case 'completed':
             timer.cancel();
             if (job.downloadUrl != null) {
-              await _downloadAudio(job.downloadUrl!, job.title);
+               await _downloadAudio(job.downloadUrl!, job.title);
             } else {
               state = state.copyWith(
                 step: ExtractionStep.error,
@@ -202,15 +203,15 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
               );
             }
             break;
-          case ExtractionStatus.failed:
+          case 'failed':
             timer.cancel();
             state = state.copyWith(
               step: ExtractionStep.error,
               errorMessage: job.error ?? 'Extraction failed.',
             );
             break;
-          case ExtractionStatus.processing:
-          case ExtractionStatus.pending:
+          case 'processing':
+          case 'pending':
             // Keep polling
             break;
         }

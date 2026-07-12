@@ -1,38 +1,21 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { extractAudio } = require('../services/extractor');
 const { getSignedDownloadUrl, deleteFile } = require('../services/s3Service');
 const db = require('../services/database');
-
-const router = express.Router();
-
+const { detectPlatform, isValidUrl } = require('../services/platformDetection');
+const { getTrackMetadata, resolveRedirect, parseDurationToMs, parseISO8601Duration } = require('../services/metadataService');
 const { addExtractionJob, getJobStatus } = require('../services/queue');
 
-// Supported URL patterns
-const SUPPORTED_PATTERNS = [
-  /instagram\.com\/reel\//i,
-  /instagram\.com\/p\//i,
-  /instagr\.am\//i,
-  /tiktok\.com\//i,
-  /vm\.tiktok\.com\//i,
-  /youtube\.com\/shorts\//i,
-  /youtu\.be\//i,
-  /youtube\.com\/watch/i,
-  /ytsearch:/i,
-];
+const router = express.Router();
 
 /**
  * POST /api/extract
  * Submit a URL for audio extraction
- *
- * Body: { url: string, deviceId: string }
- * Response: { jobId: string }
  */
 router.post('/extract', async (req, res, next) => {
   try {
     const { url, deviceId } = req.body;
 
-    // Validate input
     if (!url || typeof url !== 'string') {
       return res.status(400).json({ success: false, error_code: 'INVALID_URL', message: 'Missing or invalid URL' });
     }
@@ -41,23 +24,48 @@ router.post('/extract', async (req, res, next) => {
       return res.status(400).json({ success: false, error_code: 'MISSING_DEVICE_ID', message: 'Missing device ID' });
     }
 
-    // Validate URL format
-    const isValidUrl = SUPPORTED_PATTERNS.some((pattern) => pattern.test(url));
-    if (!isValidUrl) {
-      // Still try — yt-dlp supports many sites
-      console.warn(`[Extract] URL may not be supported: ${url}`);
+    // Instantly resolve metadata (max 4 seconds timeout race)
+    let metadata = {
+      title: 'Loading metadata...',
+      artist: 'Please wait...',
+      thumbnail: '',
+      duration: 180000,
+      platform: detectPlatform(url),
+      resolvedUrl: url
+    };
+
+    try {
+      const resolved = await Promise.race([
+        getTrackMetadata(url),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout resolving metadata')), 12000))
+      ]);
+      metadata = resolved;
+    } catch (metaErr) {
+      console.warn('[Metadata] Failed to resolve metadata early:', metaErr.message);
     }
 
-    // Create job in BullMQ
     const jobId = uuidv4();
     const hostUrl = `${req.protocol}://${req.get('host')}`;
     const quality = req.body.quality || 'high';
 
-    console.log(`[Extract] Queueing Job ${jobId} for URL: ${url} (quality: ${quality})`);
+    console.log(`[Extract] Queueing Job ${jobId} | URL: ${metadata.resolvedUrl} | Title: ${metadata.title}`);
 
-    await addExtractionJob(jobId, { url, deviceId, quality, hostUrl });
+    // Queue job in BullMQ
+    await addExtractionJob(jobId, { 
+      url: metadata.resolvedUrl, 
+      deviceId, 
+      quality, 
+      hostUrl,
+      metadata: {
+        title: metadata.title,
+        artist: metadata.artist,
+        thumbnail: metadata.thumbnail,
+        duration: metadata.duration,
+        platform: metadata.platform
+      }
+    });
 
-    res.status(202).json({ jobId });
+    res.status(202).json({ jobId, metadata });
   } catch (err) {
     next(err);
   }
@@ -66,8 +74,6 @@ router.post('/extract', async (req, res, next) => {
 /**
  * GET /api/status/:jobId
  * Check the status of an extraction job
- *
- * Response: { jobId, status, downloadUrl?, title?, error? }
  */
 router.get('/status/:jobId', async (req, res, next) => {
   try {
@@ -78,17 +84,62 @@ router.get('/status/:jobId', async (req, res, next) => {
       return res.status(404).json({ success: false, error_code: 'JOB_NOT_FOUND', message: 'Job not found' });
     }
 
-    // Map BullMQ state to legacy Flutter app status mapping
     let mappedStatus = 'pending';
     if (job.state === 'active') mappedStatus = 'processing';
     if (job.state === 'completed') mappedStatus = 'completed';
     if (job.state === 'failed') mappedStatus = 'failed';
 
+    let stage = 'queued';
+    let progressVal = 0;
+    let metadata = job.data?.metadata || null;
+
+    if (job.state === 'active') {
+      stage = 'preparing';
+    }
+    if (job.state === 'completed') {
+      stage = 'completed';
+      progressVal = 100;
+    }
+    if (job.state === 'failed') {
+      stage = 'failed';
+    }
+
+    if (job.progress) {
+      if (typeof job.progress === 'object') {
+        stage = job.progress.stage || stage;
+        progressVal = job.progress.progress || progressVal;
+        if (job.progress.metadata) {
+          metadata = job.progress.metadata;
+        }
+      } else if (typeof job.progress === 'number') {
+        progressVal = job.progress;
+      }
+    }
+
+    const hasRealMetadata = metadata && 
+                            metadata.title && 
+                            metadata.title !== 'Loading metadata...' && 
+                            metadata.artist && 
+                            metadata.artist !== 'Please wait...';
+
+    const finalTitle = hasRealMetadata ? metadata.title : (job.result?.title || metadata?.title || null);
+    const finalArtist = hasRealMetadata ? metadata.artist : (job.result?.artist || metadata?.artist || 'ReelTune');
+    const finalThumbnail = metadata?.thumbnail || job.result?.thumbnail || '';
+    const finalDuration = metadata?.duration || job.result?.duration || 180000;
+
     res.json({
       jobId,
       status: mappedStatus,
+      stage: stage,
+      progress: progressVal,
+      metadata: {
+        title: finalTitle,
+        artist: finalArtist,
+        thumbnail: finalThumbnail,
+        duration: finalDuration,
+      },
       downloadUrl: job.result?.downloadUrl || null,
-      title: job.result?.title || null,
+      title: finalTitle,
       error: job.error || null,
     });
   } catch (err) {
@@ -108,7 +159,6 @@ router.post('/confirm/:jobId', async (req, res) => {
     return res.status(404).json({ error: 'Job not found' });
   }
 
-  // Delete from S3 if we stored the S3 Key
   if (job.result?.s3Key) {
     try {
       await deleteFile(job.result.s3Key);
@@ -123,41 +173,8 @@ router.post('/confirm/:jobId', async (req, res) => {
 
 /**
  * POST /api/playlist/metadata
- * Extract metadata of a Spotify/YouTube playlist
- *
- * Body: { url: string }
- * Response: { title, description, coverUrl, tracks: [{ title, artist, durationMs, url }] }
+ * Extract metadata of a Spotify/YouTube/Apple Music playlist
  */
-// Helper to follow redirects and get final canonical URL
-async function resolveRedirect(url) {
-  if (!url) return url;
-  if (url.includes('spotify.link') || url.includes('jiosaav.in') || url.includes('youtu.be')) {
-    try {
-      const response = await fetch(url, { method: 'HEAD', redirect: 'follow' });
-      return response.url;
-    } catch (e) {
-      try {
-        const response = await fetch(url, { redirect: 'follow' });
-        return response.url;
-      } catch (err) {
-        return url;
-      }
-    }
-  }
-  return url;
-}
-
-function parseDurationToMs(durationStr) {
-  if (!durationStr) return 180000;
-  const parts = durationStr.split(':').map(Number);
-  if (parts.length === 2) {
-    return (parts[0] * 60 + parts[1]) * 1000;
-  } else if (parts.length === 3) {
-    return ((parts[0] * 60 + parts[1]) * 60 + parts[2]) * 1000;
-  }
-  return 180000;
-}
-
 const handlePlaylistMetadata = async (req, res, next) => {
   try {
     let { url } = req.body;
@@ -210,7 +227,6 @@ const handlePlaylistMetadata = async (req, res, next) => {
         const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/) || html.match(/<title>([^<]+)<\/title>/);
         const title = titleMatch ? titleMatch[1].replace(' - album by...', '').trim() : 'Spotify Import';
 
-        // Parse tracks from embed HTML
         const chunks = html.split(/TracklistRow_trackListRow/);
         const tracks = chunks.slice(1).map((chunk) => {
           const titleMatch = chunk.match(/TracklistRow_title__[^"]*"[^>]*>([^<]+)<\/h3>/) ||
@@ -263,14 +279,14 @@ const handlePlaylistMetadata = async (req, res, next) => {
         resolvedUrl,
         '--flat-playlist',
         '--dump-single-json',
-        '--playlist-end', '100', // Prevent timeout on massive playlists
+        '--playlist-end', '100', 
         '--no-warnings',
         '--no-check-certificates',
         '--extractor-args', 'youtube:player_client=ios,tv',
         '--force-ipv4'
       ];
 
-      execFile(YTDLP_BIN, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000 }, async (err, stdout, stderr) => {
+      execFile(`"${YTDLP_BIN}"`, args, { maxBuffer: 20 * 1024 * 1024, timeout: 55000, shell: true }, async (err, stdout, stderr) => {
         if (err) {
           console.warn(`[Playlist] yt-dlp failed, falling back to YouTube HTML scrape:`, stderr || err.message);
           try {
@@ -419,7 +435,6 @@ const handlePlaylistMetadata = async (req, res, next) => {
           });
         }
 
-        // Schema JSON Fallback if regex matched nothing
         if (tracks.length === 0) {
           const schemas = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
           for (const schema of schemas) {
@@ -554,21 +569,6 @@ router.post('/devices/register', async (req, res, next) => {
   }
 });
 
-function parseISO8601Duration(duration) {
-  if (!duration) return 180000;
-  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return 180000;
-  
-  const hours = parseInt(match[1] || '0', 10);
-  const minutes = parseInt(match[2] || '0', 10);
-  const seconds = parseInt(match[3] || '0', 10);
-  
-  return ((hours * 60 + minutes) * 60 + seconds) * 1000;
-}
-
-/**
- * Scraping fallback for YouTube / YouTube Music playlist metadata when yt-dlp is blocked
- */
 async function parseYoutubePlaylistScrape(url) {
   const response = await fetch(url, {
     headers: {
@@ -653,5 +653,41 @@ async function parseYoutubePlaylistScrape(url) {
     tracks
   };
 }
+
+/**
+ * GET /api/debug/jobs
+ * Debug extraction queue jobs and failures
+ */
+router.get('/debug/jobs', async (req, res) => {
+  try {
+    const { extractionQueue } = require('../services/queue');
+    if (!extractionQueue) {
+      return res.json({ error: 'Queue connection missing' });
+    }
+    const failed = await extractionQueue.getFailed(0, 20);
+    const completed = await extractionQueue.getCompleted(0, 10);
+    const active = await extractionQueue.getActive();
+    const waiting = await extractionQueue.getWaiting();
+    
+    const mapJob = (job) => ({
+      id: job.id,
+      data: job.data,
+      progress: job.progress,
+      failedReason: job.failedReason,
+      stacktrace: job.stacktrace,
+      attempts: job.attemptsMade,
+      finishedOn: job.finishedOn,
+    });
+
+    res.json({
+      failed: failed.map(mapJob),
+      completed: completed.map(mapJob),
+      active: active.map(mapJob),
+      waiting: waiting.map(mapJob),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
+  }
+});
 
 module.exports = router;

@@ -9,7 +9,7 @@ final databaseHelperProvider = Provider<DatabaseHelper>((ref) {
 class DatabaseHelper {
   static Database? _database;
   static const String _dbName = 'reeltune.db';
-  static const int _dbVersion = 7;
+  static const int _dbVersion = 8;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -127,6 +127,14 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE download_queue ADD COLUMN album_id TEXT');
       } catch (_) {}
     }
+    if (oldVersion < 8) {
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN thumbnail TEXT');
+      } catch (_) {}
+      try {
+        await db.execute('ALTER TABLE download_queue ADD COLUMN duration INTEGER');
+      } catch (_) {}
+    }
     // Ensure default fallback album exists
     await db.execute(
       "INSERT OR IGNORE INTO albums (id, name, created_at, cover_color) "
@@ -227,7 +235,9 @@ class DatabaseHelper {
         eta INTEGER DEFAULT 0,
         retries INTEGER DEFAULT 0,
         playlist_id TEXT,
-        album_id TEXT
+        album_id TEXT,
+        thumbnail TEXT,
+        duration INTEGER
       )
     ''');
 

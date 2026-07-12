@@ -6,6 +6,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../theme/app_colors.dart';
 import 'AdManager.dart';
 import 'ConsentService.dart';
+import 'AdFreeService.dart';
 
 final bannerAdHeightProvider = StateProvider<double>((ref) => 0.0);
 
@@ -33,7 +34,8 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
 
   Future<void> _loadAdaptiveBanner() async {
     final consentReady = ref.read(adConsentProvider);
-    if (!consentReady || _isLoading) return;
+    final isAdFree = ref.read(adFreeProvider);
+    if (!consentReady || isAdFree || _isLoading) return;
 
     final width = MediaQuery.of(context).size.width.truncate();
     final AnchoredAdaptiveBannerAdSize? size =
@@ -121,9 +123,38 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final isAdFree = ref.watch(adFreeProvider);
+
+    if (isAdFree) {
+      if (_bannerAd != null || _isLoaded || _isLoading) {
+        _bannerAd?.dispose();
+        _bannerAd = null;
+        _isLoaded = false;
+        _isLoading = false;
+        Future.microtask(() {
+          ref.read(bannerAdHeightProvider.notifier).state = 0.0;
+        });
+      }
+    }
+
     // Listen for consent readiness to trigger the load
     ref.listen<bool>(adConsentProvider, (prev, next) {
-      if (next && !_isLoaded && !_isLoading) {
+      if (next && !isAdFree && !_isLoaded && !_isLoading) {
+        _loadAdaptiveBanner();
+      }
+    });
+
+    // Listen for ad-free state changes
+    ref.listen<bool>(adFreeProvider, (prev, next) {
+      if (next) {
+        _bannerAd?.dispose();
+        setState(() {
+          _bannerAd = null;
+          _isLoaded = false;
+          _isLoading = false;
+        });
+        ref.read(bannerAdHeightProvider.notifier).state = 0.0;
+      } else {
         _loadAdaptiveBanner();
       }
     });
@@ -132,7 +163,7 @@ class _BannerAdWidgetState extends ConsumerState<BannerAdWidget> {
     final placeholderColor = isDark ? AppColors.darkCard : AppColors.gray100;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.surfaceBorder;
 
-    if (!_isLoaded || _bannerAd == null || _adSize == null) {
+    if (isAdFree || !_isLoaded || _bannerAd == null || _adSize == null) {
       return const SizedBox.shrink();
     }
 

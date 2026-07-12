@@ -5,23 +5,8 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../features/player/player_provider.dart';
 import '../../features/share_intent/share_intent_provider.dart';
 import 'AdManager.dart';
+import 'AdFreeService.dart';
 import 'ConsentService.dart';
-
-// Provider to manage ad-free status (e.g. unlocked for 1 hour via Rewarded ad)
-final adFreeProvider = StateNotifierProvider<AdFreeNotifier, bool>((ref) {
-  return AdFreeNotifier();
-});
-
-class AdFreeNotifier extends StateNotifier<bool> {
-  AdFreeNotifier() : super(false);
-
-  void setAdFreeForDuration(Duration duration) {
-    state = true;
-    Future.delayed(duration, () {
-      state = false;
-    });
-  }
-}
 
 final interstitialServiceProvider = Provider<InterstitialService>((ref) {
   return InterstitialService(ref);

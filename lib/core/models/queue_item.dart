@@ -14,6 +14,8 @@ class QueueItem {
   final int retries;  // Download retry attempts
   final String? playlistId;
   final String? albumId;
+  final String? thumbnail;
+  final int? duration;
 
   const QueueItem({
     required this.id,
@@ -31,6 +33,8 @@ class QueueItem {
     this.retries = 0,
     this.playlistId,
     this.albumId,
+    this.thumbnail,
+    this.duration,
   });
 
   factory QueueItem.fromMap(Map<String, dynamic> map) {
@@ -50,6 +54,8 @@ class QueueItem {
       retries: map['retries'] as int? ?? 0,
       playlistId: map['playlist_id'] as String?,
       albumId: map['album_id'] as String?,
+      thumbnail: map['thumbnail'] as String?,
+      duration: map['duration'] as int?,
     );
   }
 
@@ -70,6 +76,8 @@ class QueueItem {
       'retries': retries,
       'playlist_id': playlistId,
       'album_id': albumId,
+      'thumbnail': thumbnail,
+      'duration': duration,
     };
   }
 
@@ -89,6 +97,8 @@ class QueueItem {
     int? retries,
     String? playlistId,
     String? albumId,
+    String? thumbnail,
+    int? duration,
   }) {
     return QueueItem(
       id: id ?? this.id,
@@ -106,6 +116,8 @@ class QueueItem {
       retries: retries ?? this.retries,
       playlistId: playlistId ?? this.playlistId,
       albumId: albumId ?? this.albumId,
+      thumbnail: thumbnail ?? this.thumbnail,
+      duration: duration ?? this.duration,
     );
   }
 }

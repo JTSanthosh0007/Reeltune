@@ -6,6 +6,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../albums/albums_screen.dart';
 import '../queue/queue_screen.dart';
+import '../queue/queue_provider.dart';
+import '../../core/models/queue_item.dart';
 import '../queue/queue_badge_provider.dart';
 import '../settings/settings_screen.dart';
 import '../player/mini_player.dart';
@@ -14,6 +16,7 @@ import '../share_intent/share_intent_provider.dart';
 import '../../core/network/extraction_service.dart';
 import '../../core/ads/BannerAdWidget.dart';
 import '../../core/ads/InterstitialService.dart';
+import '../../core/ads/AdFreeService.dart';
 import 'home_screen.dart';
 
 // Import destinations for the navigation drawer
@@ -59,6 +62,39 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAdFree = ref.watch(adFreeProvider);
     final currentIndex = ref.watch(navigationIndexProvider);
+
+    // Listen to queue changes to notify completed downloads
+    ref.listen<List<QueueItem>>(queueProvider, (previous, next) {
+      if (previous == null) return;
+      for (final nextItem in next) {
+        if (nextItem.status == 'completed') {
+          // Check if it was NOT completed in the previous state (or wasn't present at all)
+          final wasCompleted = previous.any((prevItem) => prevItem.id == nextItem.id && prevItem.status == 'completed');
+          if (!wasCompleted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Saved "${nextItem.title}" to Library! 🎵',
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+                backgroundColor: AppColors.primary,
+                duration: const Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          }
+        }
+      }
+    });
     final bannerHeight = ref.watch(bannerAdHeightProvider);
     final showBanner = currentIndex != 4 && !isAdFree && bannerHeight > 0;
 

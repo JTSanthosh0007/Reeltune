@@ -36,6 +36,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   bool _hasOverlayPermission = true;
+  bool _hasAccessibilityPermission = true;
   bool _isSearching = false;
   late final FocusNode _searchFocusNode;
   late final TextEditingController _searchController;
@@ -65,10 +66,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 
   Future<void> _checkPermission() async {
-    final granted = await ShareOverlayBridge.checkOverlayPermission();
+    final grantedOverlay = await ShareOverlayBridge.checkOverlayPermission();
+    final grantedAccess = await ShareOverlayBridge.checkAccessibilityPermission();
     if (mounted) {
       setState(() {
-        _hasOverlayPermission = granted;
+        _hasOverlayPermission = grantedOverlay;
+        _hasAccessibilityPermission = grantedAccess;
       });
     }
   }
@@ -149,74 +152,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
             // 3. Universal Search Bar
             _buildSearchBar(context, isDark),
-
-            // 4. Overlay Permission Card (only if not searching)
-            if (!_hasOverlayPermission && !_isSearching)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                child: Container(
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF14B8A6), Color(0xFF0F766E)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF14B8A6).withValues(alpha: 0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      )
-                    ],
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.layers_outlined, color: Colors.white, size: 24),
-                            SizedBox(width: 10),
-                            Text(
-                              'Enable Floating Queue Badge',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Allow ReelTune to display a small floating overlay so you can track download queues instantly without leaving Instagram or YouTube.',
-                          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.3),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            TextButton(
-                              onPressed: () async {
-                                await ShareOverlayBridge.requestOverlayPermission();
-                              },
-                              style: TextButton.styleFrom(
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF0F766E),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              ),
-                              child: const Text('Enable Now', style: TextStyle(fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
 
             const SizedBox(height: 10),
 

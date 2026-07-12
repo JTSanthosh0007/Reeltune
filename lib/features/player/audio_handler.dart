@@ -34,7 +34,7 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
 
   void _initPlayer() {
     // Forward playback states
-    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+    _player.playbackEventStream.map(_transformEvent).listen(playbackState.add);
 
     // Watch position
     _player.positionStream.listen((pos) {

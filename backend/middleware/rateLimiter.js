@@ -13,10 +13,10 @@ const redisClient = new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379
 const deviceRateLimiter = rateLimit({
   store: new RedisStore({
     sendCommand: (...args) => redisClient.call(...args),
-    prefix: 'rl_v2:', // Reset the rate limit cache
+    prefix: 'rl_v5:', // Reset the rate limit cache
   }),
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '3600000', 10), // 1 hour default
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '1000000', 10),
   standardHeaders: true,
   legacyHeaders: false,
 

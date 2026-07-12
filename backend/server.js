@@ -20,7 +20,7 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' })); // Limit body size
 
 // Require the Queue so the Background Worker starts if PROCESS_TYPE=worker
-const { getJobStatus } = require('./services/queue');
+const { getJobStatus, isRedisConnected, getQueueMetrics } = require('./services/queue');
 
 // Global Request/Response Logger (Step 2 requirement)
 app.use((req, res, next) => {
@@ -29,7 +29,6 @@ app.use((req, res, next) => {
   const { method, url, headers, body } = req;
 
   console.log(`[REQUEST] [${timestamp}] ${method} ${url}`);
-  console.log(`[REQUEST HEADERS]`, JSON.stringify(headers));
   if (body && Object.keys(body).length > 0) {
     console.log(`[REQUEST BODY]`, JSON.stringify(body));
   }
@@ -39,7 +38,6 @@ app.use((req, res, next) => {
   res.json = function (data) {
     const duration = Date.now() - start;
     console.log(`[RESPONSE] [${new Date().toISOString()}] ${method} ${url} | Status: ${res.statusCode} | Duration: ${duration}ms`);
-    console.log(`[RESPONSE BODY]`, JSON.stringify(data));
     return originalJson.apply(this, arguments);
   };
 
@@ -48,8 +46,6 @@ app.use((req, res, next) => {
   res.send = function (data) {
     const duration = Date.now() - start;
     console.log(`[RESPONSE] [${new Date().toISOString()}] ${method} ${url} | Status: ${res.statusCode} | Duration: ${duration}ms`);
-    const bodyStr = typeof data === 'string' ? data : JSON.stringify(data);
-    console.log(`[RESPONSE BODY]`, bodyStr && bodyStr.length > 500 ? bodyStr.substring(0, 500) + '... (truncated)' : bodyStr);
     return originalSend.apply(this, arguments);
   };
 
@@ -64,13 +60,21 @@ app.use('/api', deviceRateLimiter);
 // Routes
 app.use('/api', extractRoutes);
 
-// Health check
-app.get('/health', (req, res) => {
+// Health check — includes Redis + S3 status
+app.get('/health', async (req, res) => {
+  const redisOk = isRedisConnected();
+  const s3Configured = process.env.AWS_ACCESS_KEY_ID && !process.env.AWS_ACCESS_KEY_ID.startsWith('your_');
+  const queueMetrics = await getQueueMetrics();
+  
   res.json({
-    status: 'ok',
+    status: redisOk ? 'ok' : 'degraded',
     service: 'reeltune-backend',
-    version: '1.0.0',
+    version: '1.2.0',
     timestamp: new Date().toISOString(),
+    redis: redisOk ? 'connected' : 'disconnected',
+    storage: s3Configured ? 's3' : 'local',
+    uptime_seconds: Math.round(process.uptime()),
+    queue: queueMetrics
   });
 });
 
@@ -83,12 +87,14 @@ app.get('/ready', (req, res) => {
 });
 
 // Metrics endpoint (Prometheus format or JSON)
-app.get('/metrics', (req, res) => {
+app.get('/metrics', async (req, res) => {
   const memoryUsage = process.memoryUsage();
+  const queueMetrics = await getQueueMetrics();
   res.json({
     uptime_seconds: process.uptime(),
     memory_usage_mb: Math.round(memoryUsage.rss / 1024 / 1024),
     cpu_usage: process.cpuUsage(),
+    queue: queueMetrics
   });
 });
 

@@ -24,7 +24,7 @@ class AlbumRepository {
       FROM albums a
       LEFT JOIN clips c ON c.album_id = a.id
       GROUP BY a.id
-      ORDER BY a.created_at DESC
+      ORDER BY CASE WHEN a.id = 'imported_playlist_songs' THEN 1 ELSE 0 END DESC, a.created_at DESC
     ''');
 
     return results.map((map) {
@@ -104,7 +104,7 @@ class AlbumRepository {
       LEFT JOIN clips c ON c.album_id = a.id
       WHERE a.name LIKE ?
       GROUP BY a.id
-      ORDER BY a.created_at DESC
+      ORDER BY CASE WHEN a.id = 'imported_playlist_songs' THEN 1 ELSE 0 END DESC, a.created_at DESC
     ''', ['%$query%']);
     return results.map((map) {
       return Album.fromMap(map, clipCount: (map['clip_count'] as int?) ?? 0);

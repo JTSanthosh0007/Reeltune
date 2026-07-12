@@ -70,7 +70,7 @@ class _AppEntryPointState extends ConsumerState<_AppEntryPoint> {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (mounted) {
           ref.read(shareIntentHandlerProvider.notifier).initialize(context);
-          ref.read(fcmServiceProvider).initialize();
+          ref.read(oneSignalServiceProvider).initialize();
         }
         
         // Initialize AdManager (AdMob setup & consent) in the background

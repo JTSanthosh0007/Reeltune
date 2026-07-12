@@ -17,6 +17,20 @@ class ShareOverlayBridge {
     } catch (_) {}
   }
 
+  static Future<bool> checkAccessibilityPermission() async {
+    try {
+      return await _channel.invokeMethod<bool>('checkAccessibilityPermission') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> requestAccessibilityPermission() async {
+    try {
+      await _channel.invokeMethod('requestAccessibilityPermission');
+    } catch (_) {}
+  }
+
   static Future<void> showBubble({int badgeCount = 1}) async {
     try {
       await _channel.invokeMethod('showBubble', {'badgeCount': badgeCount});

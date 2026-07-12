@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">Automatically detects active social apps (Instagram, YouTube, TikTok, Facebook) to display the ReelTune overlay download bubble.</string>
+</resources>

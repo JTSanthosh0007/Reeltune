@@ -13,6 +13,7 @@ import '../../main.dart'; // import global audioHandler
 import 'audio_handler.dart'; // import ReelTuneAudioHandler
 import '../../core/constants.dart';
 import '../../core/network/music_resolver_service.dart';
+import 'package:dio/dio.dart';
 
 // Position update throttle interval
 const _positionThrottleMs = 500;
@@ -131,7 +132,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   PlayerNotifier(this._ref) : super(const PlayerState()) {
     _initListeners();
-    _initPreFetchListener();
     _restoreQueueState();
     _restoreEqualizerState();
   }
@@ -228,106 +228,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     });
   }
 
-  void _initPreFetchListener() {
-    _handler.player.currentIndexStream.listen((index) async {
-      if (index == null) return;
-      final sequence = _handler.player.sequence;
-      if (sequence == null) return;
-
-      // 1. Check if the current track at `index` is unresolved and resolve it on the fly
-      if (index < sequence.length) {
-        final currentSource = sequence[index];
-        if (currentSource is UriAudioSource) {
-          final tag = currentSource.tag;
-          if (tag is MediaItem) {
-            final filePath = tag.extras?['filePath'] as String? ?? '';
-            final isPlaceholder = filePath.isEmpty || filePath.startsWith('http://') || filePath.startsWith('https://');
-            final isResolved = currentSource.uri.toString().contains('googlevideo.com');
-
-            if (isPlaceholder && !isResolved) {
-              final sourcePlatform = tag.album;
-              final title = tag.title;
-              final artist = tag.artist;
-
-              debugPrint('[Player] Resolving current track on the fly: $title');
-              final resolver = _ref.read(musicResolverServiceProvider);
-              String? streamUrl;
-              if (sourcePlatform == 'youtube') {
-                streamUrl = await resolver.resolveYoutubeStreamUrl(tag.id);
-              } else if (sourcePlatform == 'jiosaavn' || sourcePlatform == 'applemusic') {
-                streamUrl = await resolver.resolveSongQueryToStreamUrl(title, artist ?? '');
-              }
-
-              if (streamUrl != null && mounted) {
-                final concatenating = _handler.player.audioSource;
-                if (concatenating is ConcatenatingAudioSource) {
-                  final newSource = AudioSource.uri(Uri.parse(streamUrl), tag: tag);
-                  final wasPlaying = _handler.player.playing;
-                  final currentPosition = _handler.player.position;
-
-                  try {
-                    await concatenating.removeAt(index);
-                    await concatenating.insert(index, newSource);
-                    await _handler.player.seek(currentPosition, index: index);
-                    if (wasPlaying) {
-                      _handler.player.play();
-                    }
-                    debugPrint('[Player] Current track resolved & loaded successfully.');
-                  } catch (e) {
-                    debugPrint('Error updating current resolved track: $e');
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // 2. Pre-resolve/pre-fetch the next track at `index + 1` in the background
-      final nextIndex = index + 1;
-      if (nextIndex < sequence.length) {
-        final nextSource = sequence[nextIndex];
-        if (nextSource is UriAudioSource) {
-          final tag = nextSource.tag;
-          if (tag is MediaItem) {
-            final filePath = tag.extras?['filePath'] as String? ?? '';
-            final isPlaceholder = filePath.isEmpty || filePath.startsWith('http://') || filePath.startsWith('https://');
-            final isResolved = nextSource.uri.toString().contains('googlevideo.com');
-
-            if (isPlaceholder && !isResolved) {
-              final sourcePlatform = tag.album;
-              final title = tag.title;
-              final artist = tag.artist;
-
-              debugPrint('[Player] Pre-resolving next track in background: $title');
-              final resolver = _ref.read(musicResolverServiceProvider);
-              String? streamUrl;
-              if (sourcePlatform == 'youtube') {
-                streamUrl = await resolver.resolveYoutubeStreamUrl(tag.id);
-              } else if (sourcePlatform == 'jiosaavn' || sourcePlatform == 'applemusic') {
-                streamUrl = await resolver.resolveSongQueryToStreamUrl(title, artist ?? '');
-              }
-
-              if (streamUrl != null && mounted) {
-                final concatenating = _handler.player.audioSource;
-                if (concatenating is ConcatenatingAudioSource) {
-                  final newSource = AudioSource.uri(Uri.parse(streamUrl), tag: tag);
-                  try {
-                    await concatenating.removeAt(nextIndex);
-                    await concatenating.insert(nextIndex, newSource);
-                    debugPrint('[Player] Next track pre-resolved in background successfully.');
-                  } catch (e) {
-                    debugPrint('Error updating pre-resolved next track: $e');
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    });
-  }
-
   Future<void> playQueue(List<Clip> clips, int initialIndex) async {
     if (clips.isEmpty) return;
 
@@ -344,18 +244,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
     // Smooth volume fade-out/mute
     await _handler.player.setVolume(0.0);
-
-    // Resolve the first song synchronously so it starts playing immediately
-    String? resolvedInitialUri;
-    final isInitialOnline = targetClip.filePath.isEmpty || targetClip.filePath.startsWith('http://') || targetClip.filePath.startsWith('https://');
-    if (isInitialOnline) {
-      final resolver = _ref.read(musicResolverServiceProvider);
-      if (targetClip.sourcePlatform == 'youtube') {
-        resolvedInitialUri = await resolver.resolveYoutubeStreamUrl(targetClip.id);
-      } else if (targetClip.sourcePlatform == 'jiosaavn' || targetClip.sourcePlatform == 'applemusic') {
-        resolvedInitialUri = await resolver.resolveSongQueryToStreamUrl(targetClip.title, targetClip.artist ?? '');
-      }
-    }
 
     final List<MediaItem> mediaItems = [];
     final List<AudioSource> sources = [];
@@ -392,14 +280,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       mediaItems.add(mediaItem);
 
       if (isOnline) {
-        final Uri onlineUri;
-        if (i == initialIndex && resolvedInitialUri != null) {
-          onlineUri = Uri.parse(resolvedInitialUri);
-        } else {
-          // Placeholder URL, resolved dynamically in background/on-demand
-          onlineUri = Uri.parse('${AppConstants.apiBaseUrl}/api/stream/placeholder/${clip.id}');
-        }
-        sources.add(AudioSource.uri(onlineUri, tag: mediaItem));
+        sources.add(
+          ResolvedYoutubeAudioSource(
+            clip,
+            _ref.read(musicResolverServiceProvider),
+            tag: mediaItem,
+          ),
+        );
       } else {
         sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
       }
@@ -632,8 +519,20 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
             'filePath': clip.filePath,
           },
         );
+        final isOnline = clip.filePath.isEmpty || clip.filePath.startsWith('http://') || clip.filePath.startsWith('https://');
         mediaItems.add(mediaItem);
-        sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
+
+        if (isOnline) {
+          sources.add(
+            ResolvedYoutubeAudioSource(
+              clip,
+              _ref.read(musicResolverServiceProvider),
+              tag: mediaItem,
+            ),
+          );
+        } else {
+          sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
+        }
       }
 
       _handler.queue.add(mediaItems);
@@ -732,5 +631,72 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _mediaItemSub?.cancel();
     _sleepTimer?.cancel();
     super.dispose();
+  }
+}
+
+class ResolvedYoutubeAudioSource extends StreamAudioSource {
+  final Clip clip;
+  final MusicResolverService resolver;
+  final Dio _dio = Dio();
+  String? _resolvedUrl;
+
+  ResolvedYoutubeAudioSource(this.clip, this.resolver, {super.tag});
+
+  Future<String> _getOrResolveUrl() async {
+    if (_resolvedUrl != null) return _resolvedUrl!;
+
+    final sourcePlatform = clip.sourcePlatform;
+    String? streamUrl;
+    if (sourcePlatform == 'youtube') {
+      streamUrl = await resolver.resolveYoutubeStreamUrl(clip.id);
+    } else if (sourcePlatform == 'jiosaavn' || sourcePlatform == 'applemusic') {
+      streamUrl = await resolver.resolveSongQueryToStreamUrl(clip.title, clip.artist ?? '');
+    }
+
+    if (streamUrl == null) {
+      throw Exception('Failed to resolve stream URL for ${clip.title}');
+    }
+
+    _resolvedUrl = streamUrl;
+    return streamUrl;
+  }
+
+  @override
+  Future<StreamAudioResponse> request([int? start, int? end]) async {
+    final url = await _getOrResolveUrl();
+    final headers = {
+      if (start != null) 'Range': 'bytes=$start-${end ?? ""}',
+    };
+
+    final response = await _dio.get<ResponseBody>(
+      url,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: headers,
+      ),
+    );
+
+    final contentLength = response.headers.value('content-length');
+    final contentRange = response.headers.value('content-range');
+
+    int? totalLength;
+    if (contentLength != null) {
+      totalLength = int.tryParse(contentLength);
+    }
+
+    if (contentRange != null) {
+      final match = RegExp(r'bytes \d+-\d+/(\d+)').firstMatch(contentRange);
+      if (match != null) {
+        totalLength = int.tryParse(match.group(1) ?? '');
+      }
+    }
+
+    return StreamAudioResponse(
+      sourceLength: totalLength,
+      contentLength: contentLength != null ? int.tryParse(contentLength) : null,
+      offset: start ?? 0,
+      stream: response.data!.stream,
+      contentType: 'audio/mpeg',
+    );
   }
 }

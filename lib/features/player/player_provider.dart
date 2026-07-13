@@ -131,18 +131,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Duration _lastDuration = Duration.zero;
   String? _lastLoggedClipId;
 
-  LocalStreamServer? _streamServer;
+  List<Clip> _currentQueue = [];
+  int _currentIndex = 0;
 
   PlayerNotifier(this._ref) : super(const PlayerState()) {
-    _initServer();
     _initListeners();
     _restoreQueueState();
     _restoreEqualizerState();
-  }
 
-  Future<void> _initServer() async {
-    _streamServer = LocalStreamServer(_ref.read(musicResolverServiceProvider));
-    await _streamServer!.start();
+    // Bind audio handler notification actions back to notifier
+    _handler.onSkipToNext = () => skipToNext();
+    _handler.onSkipToPrevious = () => skipToPrevious();
+    _handler.onSkipToQueueItem = (index) => playIndex(index);
   }
 
   ReelTuneAudioHandler get _handler => audioHandler as ReelTuneAudioHandler;
@@ -239,76 +239,104 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   Future<void> playQueue(List<Clip> clips, int initialIndex) async {
     if (clips.isEmpty) return;
+    _currentQueue = clips;
+    _currentIndex = initialIndex;
+
+    await playIndex(initialIndex);
+    await _saveQueueState(clips, initialIndex);
+  }
+
+  Future<void> playIndex(int index) async {
+    if (_currentQueue.isEmpty || index < 0 || index >= _currentQueue.length) return;
+    _currentIndex = index;
+
+    final clip = _currentQueue[index];
 
     // Synchronously set targeted clip to update UI and support instant navigation
-    final targetClip = clips[initialIndex];
     state = state.copyWith(
-      currentClip: targetClip,
+      currentClip: clip,
       isLoading: true,
       isPlaying: false,
-      duration: targetClip.durationMs != null
-          ? Duration(milliseconds: targetClip.durationMs!)
+      duration: clip.durationMs != null
+          ? Duration(milliseconds: clip.durationMs!)
           : Duration.zero,
     );
 
     // Smooth volume fade-out/mute
     await _handler.player.setVolume(0.0);
 
-    final List<MediaItem> mediaItems = [];
-    final List<AudioSource> sources = [];
+    // Resolve the stream URL on-device
+    final resolver = _ref.read(musicResolverServiceProvider);
+    String? resolvedUrl;
+    final isOnline = clip.filePath.isEmpty || clip.filePath.startsWith('http://') || clip.filePath.startsWith('https://');
 
-    // Preload albums to match cover image paths
+    if (isOnline) {
+      debugPrint('[Player] Resolving direct stream URL for online song: ${clip.title}');
+      if (clip.sourcePlatform == 'youtube') {
+        resolvedUrl = await resolver.resolveYoutubeStreamUrl(clip.id);
+      } else {
+        resolvedUrl = await resolver.resolveSongQueryToStreamUrl(clip.title, clip.artist ?? '');
+      }
+    } else {
+      resolvedUrl = clip.filePath;
+    }
+
+    if (resolvedUrl == null) {
+      debugPrint('[Player] Stream resolution failed. Skipping to next.');
+      state = state.copyWith(isLoading: false);
+      await skipToNext();
+      return;
+    }
+
+    final List<MediaItem> mediaItems = [];
     final albums = _ref.read(albumsProvider).value ?? [];
 
-    for (int i = 0; i < clips.length; i++) {
-      final clip = clips[i];
+    for (final c in _currentQueue) {
       Album? album;
       try {
-        album = albums.firstWhere((a) => a.id == clip.albumId);
+        album = albums.firstWhere((a) => a.id == c.albumId);
       } catch (_) {
         album = null;
       }
 
-      final isOnline = clip.filePath.isEmpty || clip.filePath.startsWith('http://') || clip.filePath.startsWith('https://');
+      final isOnlineClip = c.filePath.isEmpty || c.filePath.startsWith('http://') || c.filePath.startsWith('https://');
 
       final mediaItem = MediaItem(
-        id: clip.id,
-        title: clip.title,
-        album: clip.sourcePlatform ?? 'ReelTune',
-        artist: clip.artist ?? 'Unknown Artist',
-        duration: clip.durationMs != null ? Duration(milliseconds: clip.durationMs!) : null,
+        id: c.id,
+        title: c.title,
+        album: c.sourcePlatform ?? 'ReelTune',
+        artist: c.artist ?? 'Unknown Artist',
+        duration: c.durationMs != null ? Duration(milliseconds: c.durationMs!) : null,
         artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
             ? Uri.file(album.coverImagePath!)
-            : (isOnline ? Uri.parse('https://i.ytimg.com/vi/${clip.id}/hqdefault.jpg') : null),
+            : (isOnlineClip ? Uri.parse('https://i.ytimg.com/vi/${c.id}/hqdefault.jpg') : null),
         extras: {
-          'albumId': clip.albumId,
-          'filePath': clip.filePath,
+          'albumId': c.albumId,
+          'filePath': c.filePath,
         },
       );
-      mediaItem.extras?['sourcePlatform'] = clip.sourcePlatform;
+      mediaItem.extras?['sourcePlatform'] = c.sourcePlatform;
       mediaItems.add(mediaItem);
-
-      if (isOnline) {
-        final localUrl = _streamServer?.getUrl(clip) ?? '';
-        sources.add(AudioSource.uri(Uri.parse(localUrl), tag: mediaItem));
-      } else {
-        sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
-      }
     }
 
     // Set the queue on the audio handler
     _handler.queue.add(mediaItems);
 
-    final playlist = ConcatenatingAudioSource(children: sources);
+    final activeMediaItem = mediaItems[index];
+    _handler.mediaItem.add(activeMediaItem);
+
     try {
-      await _handler.player.setAudioSource(
-        playlist,
-        initialIndex: initialIndex,
-      );
+      final source = isOnline
+          ? AudioSource.uri(Uri.parse(resolvedUrl), tag: activeMediaItem)
+          : AudioSource.file(resolvedUrl, tag: activeMediaItem);
+
+      await _handler.player.setAudioSource(source);
       _handler.play();
       _handler.fadeVolume(1.0, const Duration(milliseconds: 300));
-      _saveQueueState(clips, initialIndex);
+      await _saveQueueIndex(index);
     } catch (e) {
+      debugPrint('[Player] Playback error: $e');
+      state = state.copyWith(isLoading: false);
       _handler.playbackState.add(_handler.playbackState.value.copyWith(
         errorMessage: 'Failed to load audio: $e',
       ));
@@ -320,22 +348,47 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> moveQueueItem(int oldIndex, int newIndex) async {
-    await _handler.moveQueueItem(oldIndex, newIndex);
-    try {
-      final currentQueue = _handler.queue.value;
-      final allClips = await _ref.read(clipRepositoryProvider).getAllClips();
-      final Map<String, Clip> clipMap = {for (final c in allClips) c.id: c};
-      final List<Clip> restoredClips = [];
-      for (final item in currentQueue) {
-        if (clipMap.containsKey(item.id)) {
-          restoredClips.add(clipMap[item.id]!);
-        }
-      }
-      final activeIndex = _handler.player.currentIndex ?? 0;
-      await _saveQueueState(restoredClips, activeIndex);
-    } catch (e) {
-      debugPrint('Error saving moved queue: $e');
+    if (oldIndex < 0 || oldIndex >= _currentQueue.length || newIndex < 0 || newIndex >= _currentQueue.length) return;
+
+    final item = _currentQueue.removeAt(oldIndex);
+    _currentQueue.insert(newIndex, item);
+
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex++;
     }
+
+    // Rebuild mediaItems for audio handler queue
+    final List<MediaItem> mediaItems = [];
+    final albums = _ref.read(albumsProvider).value ?? [];
+    for (final c in _currentQueue) {
+      Album? album;
+      try {
+        album = albums.firstWhere((a) => a.id == c.albumId);
+      } catch (_) {
+        album = null;
+      }
+      final isOnlineClip = c.filePath.isEmpty || c.filePath.startsWith('http://') || c.filePath.startsWith('https://');
+      mediaItems.add(MediaItem(
+        id: c.id,
+        title: c.title,
+        album: c.sourcePlatform ?? 'ReelTune',
+        artist: c.artist ?? 'Unknown Artist',
+        duration: c.durationMs != null ? Duration(milliseconds: c.durationMs!) : null,
+        artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
+            ? Uri.file(album.coverImagePath!)
+            : (isOnlineClip ? Uri.parse('https://i.ytimg.com/vi/${c.id}/hqdefault.jpg') : null),
+        extras: {
+          'albumId': c.albumId,
+          'filePath': c.filePath,
+        },
+      ));
+    }
+    _handler.queue.add(mediaItems);
+    await _saveQueueState(_currentQueue, _currentIndex);
   }
 
   Future<void> togglePlayPause() async {
@@ -392,11 +445,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> skipToNext() async {
-    await audioHandler.skipToNext();
+    if (_currentQueue.isEmpty) return;
+    final nextIndex = (_currentIndex + 1) % _currentQueue.length;
+    await playIndex(nextIndex);
   }
 
   Future<void> skipToPrevious() async {
-    await audioHandler.skipToPrevious();
+    if (_currentQueue.isEmpty) return;
+    final prevIndex = (_currentIndex - 1 + _currentQueue.length) % _currentQueue.length;
+    await playIndex(prevIndex);
   }
 
   // Sleep Timer implementation
@@ -498,58 +555,78 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
       if (restoredClips.isEmpty) return;
 
-      final List<MediaItem> mediaItems = [];
-      final List<AudioSource> sources = [];
+      _currentQueue = restoredClips;
+      _currentIndex = savedIndex;
 
-      final albums = _ref.read(albumsProvider).value ?? [];
+      final clip = restoredClips[savedIndex];
+      String? resolvedUrl;
+      final isOnline = clip.filePath.isEmpty || clip.filePath.startsWith('http://') || clip.filePath.startsWith('https://');
 
-      for (final clip in restoredClips) {
-        Album? album;
-        try {
-          album = albums.firstWhere((a) => a.id == clip.albumId);
-        } catch (_) {}
+      if (isOnline) {
+        final resolver = _ref.read(musicResolverServiceProvider);
+        if (clip.sourcePlatform == 'youtube') {
+          resolvedUrl = await resolver.resolveYoutubeStreamUrl(clip.id);
+        } else {
+          resolvedUrl = await resolver.resolveSongQueryToStreamUrl(clip.title, clip.artist ?? '');
+        }
+      } else {
+        resolvedUrl = clip.filePath;
+      }
 
-        final mediaItem = MediaItem(
+      if (resolvedUrl != null) {
+        final activeMediaItem = MediaItem(
           id: clip.id,
           title: clip.title,
           album: clip.sourcePlatform ?? 'ReelTune',
           artist: clip.artist ?? 'Unknown Artist',
           duration: clip.durationMs != null ? Duration(milliseconds: clip.durationMs!) : null,
-          artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
-              ? Uri.file(album.coverImagePath!)
-              : null,
           extras: {
             'albumId': clip.albumId,
             'filePath': clip.filePath,
           },
         );
-        final isOnline = clip.filePath.isEmpty || clip.filePath.startsWith('http://') || clip.filePath.startsWith('https://');
-        mediaItems.add(mediaItem);
 
-        if (isOnline) {
-          final localUrl = _streamServer?.getUrl(clip) ?? '';
-          sources.add(AudioSource.uri(Uri.parse(localUrl), tag: mediaItem));
-        } else {
-          sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
+        final List<MediaItem> mediaItems = [];
+        final albums = _ref.read(albumsProvider).value ?? [];
+        for (final c in restoredClips) {
+          Album? album;
+          try {
+            album = albums.firstWhere((a) => a.id == c.albumId);
+          } catch (_) {}
+          final isOnlineClip = c.filePath.isEmpty || c.filePath.startsWith('http://') || c.filePath.startsWith('https://');
+          mediaItems.add(MediaItem(
+            id: c.id,
+            title: c.title,
+            album: c.sourcePlatform ?? 'ReelTune',
+            artist: c.artist ?? 'Unknown Artist',
+            duration: c.durationMs != null ? Duration(milliseconds: c.durationMs!) : null,
+            artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
+                ? Uri.file(album.coverImagePath!)
+                : (isOnlineClip ? Uri.parse('https://i.ytimg.com/vi/${c.id}/hqdefault.jpg') : null),
+            extras: {
+              'albumId': c.albumId,
+              'filePath': c.filePath,
+            },
+          ));
         }
-      }
 
-      _handler.queue.add(mediaItems);
-      final playlist = ConcatenatingAudioSource(children: sources);
-      
-      await _handler.player.setAudioSource(
-        playlist,
-        initialIndex: savedIndex,
-        initialPosition: Duration(milliseconds: savedPosition),
-      );
-      
-      if (savedIndex < restoredClips.length) {
-        final targetClip = restoredClips[savedIndex];
+        _handler.queue.add(mediaItems);
+        _handler.mediaItem.add(activeMediaItem);
+
+        final source = isOnline
+            ? AudioSource.uri(Uri.parse(resolvedUrl), tag: activeMediaItem)
+            : AudioSource.file(resolvedUrl, tag: activeMediaItem);
+
+        await _handler.player.setAudioSource(
+          source,
+          initialPosition: Duration(milliseconds: savedPosition),
+        );
+
         state = state.copyWith(
-          currentClip: targetClip,
+          currentClip: clip,
           position: Duration(milliseconds: savedPosition),
-          duration: targetClip.durationMs != null
-              ? Duration(milliseconds: targetClip.durationMs!)
+          duration: clip.durationMs != null
+              ? Duration(milliseconds: clip.durationMs!)
               : Duration.zero,
         );
       }
@@ -629,69 +706,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _playbackStateSub?.cancel();
     _mediaItemSub?.cancel();
     _sleepTimer?.cancel();
-    _streamServer?.stop();
     super.dispose();
   }
 }
 
-class LocalStreamServer {
-  HttpServer? _server;
-  final MusicResolverService resolver;
-
-  LocalStreamServer(this.resolver);
-
-  Future<void> start() async {
-    try {
-      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-      debugPrint('[LocalStreamServer] Running on port ${_server!.port}');
-
-      _server!.listen((HttpRequest request) async {
-        try {
-          final path = request.uri.path;
-          if (path == '/stream') {
-            final id = request.uri.queryParameters['id'] ?? '';
-            final platform = request.uri.queryParameters['platform'] ?? '';
-            final title = request.uri.queryParameters['title'] ?? '';
-            final artist = request.uri.queryParameters['artist'] ?? '';
-
-            debugPrint('[LocalStreamServer] Resolving stream query for "$title" - $artist ($platform)');
-            String? streamUrl;
-            if (platform == 'youtube') {
-              streamUrl = await resolver.resolveYoutubeStreamUrl(id);
-            } else {
-              streamUrl = await resolver.resolveSongQueryToStreamUrl(title, artist);
-            }
-
-            if (streamUrl != null) {
-              request.response.statusCode = HttpStatus.temporaryRedirect;
-              request.response.headers.set(HttpHeaders.locationHeader, streamUrl);
-              await request.response.close();
-              debugPrint('[LocalStreamServer] 307 Redirect -> $streamUrl');
-            } else {
-              request.response.statusCode = HttpStatus.notFound;
-              await request.response.close();
-            }
-          } else {
-            request.response.statusCode = HttpStatus.notFound;
-            await request.response.close();
-          }
-        } catch (e) {
-          debugPrint('[LocalStreamServer] Request handler error: $e');
-          request.response.statusCode = HttpStatus.internalServerError;
-          await request.response.close();
-        }
-      });
-    } catch (e) {
-      debugPrint('[LocalStreamServer] Failed to bind to loopback port: $e');
-    }
-  }
-
-  String getUrl(Clip clip) {
-    final port = _server?.port ?? 8080;
-    return 'http://127.0.0.1:$port/stream?id=${clip.id}&platform=${clip.sourcePlatform}&title=${Uri.encodeComponent(clip.title)}&artist=${Uri.encodeComponent(clip.artist ?? "")}';
-  }
-
-  void stop() {
-    _server?.close();
-  }
-}
+// ResolvedYoutubeAudioSource removed. Single direct AudioSource used instead.

@@ -19,6 +19,10 @@ Future<AudioHandler> initAudioHandler() async {
 
 class ReelTuneAudioHandler extends BaseAudioHandler {
   late final AudioPlayer _player;
+  
+  VoidCallback? onSkipToNext;
+  VoidCallback? onSkipToPrevious;
+  void Function(int)? onSkipToQueueItem;
 
   // Equalizer and audio effects (Android-only native effects, simulated on iOS)
   AndroidEqualizer? _equalizer;
@@ -153,10 +157,18 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> skipToNext() => _player.seekToNext();
+  Future<void> skipToNext() async {
+    if (onSkipToNext != null) {
+      onSkipToNext!();
+    }
+  }
 
   @override
-  Future<void> skipToPrevious() => _player.seekToPrevious();
+  Future<void> skipToPrevious() async {
+    if (onSkipToPrevious != null) {
+      onSkipToPrevious!();
+    }
+  }
 
   @override
   Future<void> stop() async {
@@ -228,8 +240,9 @@ class ReelTuneAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    if (index < 0 || index >= queue.value.length) return;
-    await _player.seek(Duration.zero, index: index);
+    if (onSkipToQueueItem != null) {
+      onSkipToQueueItem!(index);
+    }
   }
 
   // Play a specific item from path

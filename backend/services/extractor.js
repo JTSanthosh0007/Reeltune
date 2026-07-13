@@ -608,6 +608,62 @@ async function downloadWithCobalt(url, outputPath) {
   throw new Error(`All Cobalt mirrors failed. Last error: ${lastError?.message || lastError}`);
 }
 
+async function scrapeYoutubeSearch(query) {
+  try {
+    const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=EgIQAQ%253D%253D`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP Error ${response.status}`);
+    }
+    const html = await response.text();
+    const match = html.match(/var ytInitialData = ({.*?});<\/script>/);
+    if (match) {
+      const json = JSON.parse(match[1]);
+      const contents = json.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents;
+      if (contents && Array.isArray(contents)) {
+        const videos = [];
+        for (const item of contents) {
+          if (item.videoRenderer) {
+            const video = item.videoRenderer;
+            const videoId = video.videoId;
+            const title = video.title?.runs?.[0]?.text || 'Unknown Title';
+            const artist = video.ownerText?.runs?.[0]?.text || 'Unknown Artist';
+            const durationText = video.lengthText?.simpleText || '3:00';
+            const parts = durationText.split(':').map(Number);
+            let duration = 180;
+            if (parts.length === 2) {
+              duration = parts[0] * 60 + parts[1];
+            } else if (parts.length === 3) {
+              duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            }
+            if (videoId) {
+              videos.push({
+                id: videoId,
+                title,
+                artist,
+                duration,
+                thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                url: `https://www.youtube.com/watch?v=${videoId}`
+              });
+            }
+          }
+        }
+        return videos;
+      }
+    }
+  } catch (err) {
+    console.error('[Scraper] HTML Scraping failed:', err.message);
+  }
+  return [];
+}
+
 function searchYoutubeTracks(query) {
   return new Promise((resolve, reject) => {
     const isWin = os.platform() === 'win32';
@@ -637,9 +693,19 @@ function searchYoutubeTracks(query) {
       '--force-ipv4',
     ];
 
-    execFile(commandBin, args, { timeout: 8000, shell: shellOption }, (err, stdout, stderr) => {
+    execFile(commandBin, args, { timeout: 8000, shell: shellOption }, async (err, stdout, stderr) => {
       if (err) {
         console.error('[Search] yt-dlp search failed:', stderr || err.message);
+        console.log('[Search] Attempting HTML Scraping fallback...');
+        try {
+          const scraped = await scrapeYoutubeSearch(sanitizedQuery);
+          if (scraped && scraped.length > 0) {
+            console.log('[Search] HTML Scraping fallback succeeded.');
+            return resolve(scraped);
+          }
+        } catch (scrapeErr) {
+          console.error('[Search] HTML Scraping fallback failed:', scrapeErr.message);
+        }
         return reject(new Error('Search failed'));
       }
 

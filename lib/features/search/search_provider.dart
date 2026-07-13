@@ -8,6 +8,7 @@ import '../../core/db/album_repository.dart';
 import '../../core/db/queue_repository.dart';
 import '../library/PlaylistRepository.dart';
 import '../../core/network/api_client.dart';
+import '../../core/network/music_resolver_service.dart';
 
 import '../../core/models/clip.dart';
 import '../../core/models/album.dart';
@@ -272,92 +273,44 @@ class SearchNotifier extends StateNotifier<SearchState> {
   Future<Map<String, List<Clip>>> _performOnlineSearch(String query) async {
     try {
       final plugins = _ref.read(pluginsProvider);
+      final resolver = _ref.read(musicResolverServiceProvider);
 
-      final response = await _apiClient.get<Map<String, dynamic>>(
-        '/api/search',
-        queryParameters: {'q': query},
-      );
-
-      if (response.statusCode == 200 && response.data != null) {
-        final data = response.data!;
-        
-        final List<Clip> ytmusic;
-        if (plugins.isYoutubeEnabled) {
-          final ytList = data['ytmusic'] as List<dynamic>? ?? [];
-          ytmusic = ytList.map((item) {
-            final map = item as Map<String, dynamic>;
-            final id = map['id'] as String;
-            return Clip(
-              id: id,
-              albumId: 'online',
-              title: map['title'] as String? ?? 'Unknown Title',
-              filePath: '', // Empty path indicates it's an online stream
-              durationMs: ((map['duration'] as num? ?? 180) * 1000).toInt(),
-              sourceUrl: 'https://www.youtube.com/watch?v=$id',
-              sourcePlatform: 'youtube',
-              artist: map['artist'] as String? ?? 'Unknown Artist',
-              albumName: 'YouTube Music',
-              createdAt: DateTime.now().millisecondsSinceEpoch,
-            );
-          }).toList();
-        } else {
-          ytmusic = [];
-        }
-
-        final List<Clip> jiosaavn;
-        if (plugins.isJiosaavnEnabled) {
-          final saavnList = data['jiosaavn'] as List<dynamic>? ?? [];
-          jiosaavn = saavnList.map((item) {
-            final map = item as Map<String, dynamic>;
-            final id = map['id'] as String;
-            return Clip(
-              id: id,
-              albumId: 'online_saavn',
-              title: map['title'] as String? ?? 'Unknown Title',
-              filePath: '', // Empty path indicates it's an online stream
-              durationMs: 180000, // JioSaavn autocomplete has no duration, default to 3 minutes
-              sourceUrl: map['url'] as String? ?? '',
-              sourcePlatform: 'jiosaavn',
-              artist: map['artist'] as String? ?? 'Unknown Artist',
-              albumName: map['album'] as String? ?? 'JioSaavn',
-              genre: map['thumbnail'] as String?, // Store thumbnail URL here
-              createdAt: DateTime.now().millisecondsSinceEpoch,
-            );
-          }).toList();
-        } else {
-          jiosaavn = [];
-        }
-
-        final List<Clip> applemusic;
-        if (plugins.isApplemusicEnabled) {
-          final appleList = data['applemusic'] as List<dynamic>? ?? [];
-          applemusic = appleList.map((item) {
-            final map = item as Map<String, dynamic>;
-            final id = map['id'] as String;
-            return Clip(
-              id: id,
-              albumId: 'online_apple',
-              title: map['title'] as String? ?? 'Unknown Title',
-              filePath: '', // Empty path indicates it's an online stream
-              durationMs: ((map['duration'] as num? ?? 180) * 1000).toInt(),
-              sourceUrl: map['url'] as String? ?? '',
-              sourcePlatform: 'applemusic',
-              artist: map['artist'] as String? ?? 'Unknown Artist',
-              albumName: map['album'] as String? ?? 'Apple Music',
-              genre: map['thumbnail'] as String?, // Store artwork URL here
-              createdAt: DateTime.now().millisecondsSinceEpoch,
-            );
-          }).toList();
-        } else {
-          applemusic = [];
-        }
-
-        return {
-          'ytmusic': ytmusic,
-          'jiosaavn': jiosaavn,
-          'applemusic': applemusic,
-        };
+      final List<Clip> ytmusic;
+      if (plugins.isYoutubeEnabled) {
+        ytmusic = await resolver.searchYoutube(query);
+      } else {
+        ytmusic = [];
       }
+
+      final List<Clip> jiosaavn;
+      if (plugins.isJiosaavnEnabled) {
+        final rawSaavn = await resolver.searchJioSaavn(query);
+        jiosaavn = rawSaavn.map((clip) {
+          return clip.copyWith(
+            albumId: 'online_saavn',
+          );
+        }).toList();
+      } else {
+        jiosaavn = [];
+      }
+
+      final List<Clip> applemusic;
+      if (plugins.isApplemusicEnabled) {
+        final rawApple = await resolver.searchAppleMusic(query);
+        applemusic = rawApple.map((clip) {
+          return clip.copyWith(
+            albumId: 'online_apple',
+          );
+        }).toList();
+      } else {
+        applemusic = [];
+      }
+
+      return {
+        'ytmusic': ytmusic,
+        'jiosaavn': jiosaavn,
+        'applemusic': applemusic,
+      };
     } catch (err) {
       debugPrint('[UniversalSearch] Online search failed: $err');
     }

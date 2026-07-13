@@ -10,6 +10,7 @@ import '../../core/db/clip_repository.dart';
 import '../../core/models/clip.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/extraction_service.dart';
+import '../../core/network/music_resolver_service.dart';
 import '../../core/storage/file_storage_service.dart';
 import '../albums/album_providers.dart';
 import '../notifications/notifications_provider.dart';
@@ -133,6 +134,53 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
   }
 
   Future<void> _extractFromUrl(String url) async {
+    final isMusic = state.platform == 'youtube' || state.platform == 'jiosaavn' || state.platform == 'applemusic';
+    if (isMusic) {
+      try {
+        state = state.copyWith(step: ExtractionStep.extracting);
+        final resolver = _ref.read(musicResolverServiceProvider);
+        
+        String? resolvedTitle;
+        String? directStreamUrl;
+        
+        if (url.startsWith('ytsearch:')) {
+          final query = url.replaceFirst('ytsearch:', '');
+          final searchList = await resolver.searchYoutube(query);
+          if (searchList.isEmpty) {
+            throw Exception('No matching video found on YouTube for download.');
+          }
+          final topVideo = searchList.first;
+          resolvedTitle = topVideo.title;
+          directStreamUrl = await resolver.resolveYoutubeStreamUrl(topVideo.id);
+        } else if (url.contains('youtube.com/') || url.contains('youtu.be/')) {
+          final videoId = url.contains('youtu.be/') 
+              ? url.split('/').last.split('?').first
+              : Uri.parse(url).queryParameters['v'] ?? url.split('/').last;
+          directStreamUrl = await resolver.resolveYoutubeStreamUrl(videoId);
+          resolvedTitle = state.generatedTitle;
+        } else {
+          await _extractFromServer(url);
+          return;
+        }
+
+        if (directStreamUrl == null) {
+          throw Exception('Failed to resolve direct streaming URL.');
+        }
+
+        await _downloadAudio(directStreamUrl, resolvedTitle);
+      } catch (e) {
+        state = state.copyWith(
+          step: ExtractionStep.error,
+          errorMessage: e.toString().replaceAll('Exception: ', ''),
+        );
+      }
+      return;
+    }
+
+    await _extractFromServer(url);
+  }
+
+  Future<void> _extractFromServer(String url) async {
     try {
       final extractionService = _ref.read(extractionServiceProvider);
       final qualityText = _ref.read(playbackQualityProvider);
@@ -159,13 +207,13 @@ class ExtractionFlowNotifier extends StateNotifier<ExtractionFlowState> {
       // Start polling
       _startPolling(jobId);
     } on ApiException catch (e, stack) {
-      debugPrintStack(stackTrace: stack, label: 'ApiException in _extractFromUrl');
+      debugPrintStack(stackTrace: stack, label: 'ApiException in _extractFromServer');
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: e.message,
       );
     } catch (e, stack) {
-      debugPrintStack(stackTrace: stack, label: 'Error in _extractFromUrl');
+      debugPrintStack(stackTrace: stack, label: 'Error in _extractFromServer');
       state = state.copyWith(
         step: ExtractionStep.error,
         errorMessage: 'Failed to start extraction: $e',

@@ -11,6 +11,7 @@ import '../../core/db/clip_repository.dart';
 import '../albums/album_providers.dart';
 import '../../main.dart'; // import global audioHandler
 import 'audio_handler.dart'; // import ReelTuneAudioHandler
+import '../../core/constants.dart';
 
 // Position update throttle interval
 const _positionThrottleMs = 500;
@@ -256,6 +257,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         album = null;
       }
 
+      final isOnline = clip.filePath.isEmpty || clip.filePath.startsWith('http://') || clip.filePath.startsWith('https://');
+
       final mediaItem = MediaItem(
         id: clip.id,
         title: clip.title,
@@ -264,14 +267,27 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         duration: clip.durationMs != null ? Duration(milliseconds: clip.durationMs!) : null,
         artUri: album?.coverImagePath != null && album!.coverImagePath!.isNotEmpty
             ? Uri.file(album.coverImagePath!)
-            : null,
+            : (isOnline ? Uri.parse('https://i.ytimg.com/vi/${clip.id}/hqdefault.jpg') : null),
         extras: {
           'albumId': clip.albumId,
           'filePath': clip.filePath,
         },
       );
       mediaItems.add(mediaItem);
-      sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
+
+      if (isOnline) {
+        final Uri onlineUri;
+        if (clip.sourcePlatform == 'jiosaavn') {
+          onlineUri = Uri.parse('${AppConstants.apiBaseUrl}/api/stream/saavn?title=${Uri.encodeComponent(clip.title)}&artist=${Uri.encodeComponent(clip.artist ?? "")}');
+        } else if (clip.sourcePlatform == 'applemusic') {
+          onlineUri = Uri.parse('${AppConstants.apiBaseUrl}/api/stream/apple?title=${Uri.encodeComponent(clip.title)}&artist=${Uri.encodeComponent(clip.artist ?? "")}');
+        } else {
+          onlineUri = Uri.parse('${AppConstants.apiBaseUrl}/api/stream/${clip.id}');
+        }
+        sources.add(AudioSource.uri(onlineUri, tag: mediaItem));
+      } else {
+        sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
+      }
     }
 
     // Set the queue on the audio handler

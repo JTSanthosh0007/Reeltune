@@ -690,4 +690,166 @@ router.get('/debug/jobs', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/search
+ * Search online music tracks from YouTube Music, JioSaavn, and Apple Music (iTunes)
+ */
+router.get('/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.trim() === '') {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    const query = q.trim();
+    const { searchYoutubeTracks } = require('../services/extractor');
+
+    const [ytmusicResults, saavnResults, appleResults] = await Promise.all([
+      searchYoutubeTracks(query).catch(err => {
+        console.error('[Search API] YouTube Music failed:', err.message);
+        return [];
+      }),
+      (async () => {
+        try {
+          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+          const saavnUrl = `https://www.jiosaavn.com/api.php?__call=autocomplete.get&query=${encodeURIComponent(query)}&_format=json&_marker=0`;
+          const response = await fetch(saavnUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'application/json'
+            }
+          });
+          if (response.ok) {
+            const json = await response.json();
+            if (json.songs && json.songs.data) {
+              return json.songs.data.map(song => {
+                const imageUrl = (song.image || '').replace('50x50', '500x500').replace('150x150', '500x500');
+                return {
+                  id: song.id,
+                  title: song.title,
+                  artist: song.description || 'Unknown Artist',
+                  album: song.album || 'JioSaavn',
+                  thumbnail: imageUrl,
+                  url: song.url || ''
+                };
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[Search API] JioSaavn autocomplete failed:', err.message);
+        }
+        return [];
+      })(),
+      (async () => {
+        try {
+          const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+          const appleUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&media=music&limit=10`;
+          const response = await fetch(appleUrl);
+          if (response.ok) {
+            const json = await response.json();
+            if (json.results) {
+              return json.results.map(track => {
+                const imageUrl = (track.artworkUrl100 || '').replace('100x100bb', '600x600bb');
+                return {
+                  id: track.trackId.toString(),
+                  title: track.trackName || 'Unknown Title',
+                  artist: track.artistName || 'Unknown Artist',
+                  album: track.collectionName || 'Apple Music',
+                  duration: Math.round((track.trackTimeMillis || 180000) / 1000),
+                  thumbnail: imageUrl,
+                  url: track.trackViewUrl || ''
+                };
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[Search API] Apple Music search failed:', err.message);
+        }
+        return [];
+      })()
+    ]);
+
+    res.json({
+      ytmusic: ytmusicResults,
+      jiosaavn: saavnResults,
+      applemusic: appleResults
+    });
+  } catch (err) {
+    console.error('[Search API] Main Error:', err.message);
+    res.status(500).json({ error: 'Failed to perform online search' });
+  }
+});
+
+/**
+ * GET /api/stream/apple
+ * Resolve Apple Music tracks by searching YouTube and redirecting to the stream
+ */
+router.get('/stream/apple', async (req, res) => {
+  try {
+    const { title, artist } = req.query;
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    const { searchYoutubeTracks, resolveStreamUrl } = require('../services/extractor');
+    const searchResults = await searchYoutubeTracks(`${title} ${artist || ''}`);
+    if (searchResults && searchResults.length > 0) {
+      const topVideoId = searchResults[0].id;
+      const directUrl = await resolveStreamUrl(topVideoId);
+      return res.redirect(302, directUrl);
+    }
+    res.status(404).json({ error: 'No matching track found on YouTube' });
+  } catch (err) {
+    console.error('[Apple Stream API] Error:', err.message);
+    res.status(500).json({ error: 'Failed to resolve Apple Music track' });
+  }
+});
+
+/**
+ * GET /api/stream/saavn
+ * Resolve JioSaavn tracks by searching YouTube and redirecting to the stream
+ */
+router.get('/stream/saavn', async (req, res) => {
+  try {
+    const { title, artist } = req.query;
+    if (!title) {
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    const { searchYoutubeTracks, resolveStreamUrl } = require('../services/extractor');
+    const searchResults = await searchYoutubeTracks(`${title} ${artist || ''}`);
+    if (searchResults && searchResults.length > 0) {
+      const topVideoId = searchResults[0].id;
+      const directUrl = await resolveStreamUrl(topVideoId);
+      return res.redirect(302, directUrl);
+    }
+    res.status(404).json({ error: 'No matching track found on YouTube' });
+  } catch (err) {
+    console.error('[Saavn Stream API] Error:', err.message);
+    res.status(500).json({ error: 'Failed to resolve JioSaavn track' });
+  }
+});
+
+/**
+ * GET /api/stream/:videoId
+ * Resolve and redirect to a direct audio stream URL
+ */
+router.get('/stream/:videoId', async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    if (!videoId) {
+      return res.status(400).json({ error: 'Video ID is required' });
+    }
+
+    const { resolveStreamUrl } = require('../services/extractor');
+    const directUrl = await resolveStreamUrl(videoId);
+    
+    // Redirect the audio player to the direct stream URL
+    res.redirect(302, directUrl);
+  } catch (err) {
+    console.error('[Stream API] Error:', err.message);
+    res.status(500).json({ error: 'Failed to resolve audio stream' });
+  }
+});
+
 module.exports = router;

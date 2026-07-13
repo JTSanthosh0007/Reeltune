@@ -1,32 +1,20 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/db/clip_repository.dart';
 import '../../core/models/clip.dart';
 import '../../core/models/album.dart';
 import '../../core/models/playlist.dart';
 import '../../shared/widgets/cached_artwork_image.dart';
 import '../player/player_provider.dart';
 import '../player/mini_player.dart';
-import '../player/full_player_screen.dart';
 import '../albums/album_providers.dart';
 import '../albums/album_detail_screen.dart';
 import '../library/PlaylistsProvider.dart';
 import '../library/playlist_detail_screen.dart';
-
-// --- Search query provider ---
-final searchQueryProvider = StateProvider<String>((ref) => '');
-
-// --- Search clips/songs provider ---
-final searchResultsProvider = FutureProvider<List<Clip>>((ref) async {
-  final query = ref.watch(searchQueryProvider);
-  if (query.trim().isEmpty) return [];
-  return ref.watch(clipRepositoryProvider).searchClips(query);
-});
+import 'search_provider.dart';
+import '../queue/queue_provider.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   final bool isTab;
@@ -42,28 +30,22 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
-  Timer? _debounce;
 
   @override
   void dispose() {
     _controller.dispose();
-    _debounce?.cancel();
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
-      ref.read(searchQueryProvider.notifier).state = query;
-    });
+    ref.read(searchProvider.notifier).onQueryChanged(query);
   }
 
   @override
   Widget build(BuildContext context) {
-    final query = ref.watch(searchQueryProvider);
-    final clipsAsync = ref.watch(searchResultsProvider);
-    final albumsAsync = ref.watch(searchAlbumsProvider(query));
-    final playlistsAsync = ref.watch(searchPlaylistsProvider(query));
+    final searchState = ref.watch(searchProvider);
+    final albumsAsync = ref.watch(searchAlbumsProvider(searchState.query));
+    final playlistsAsync = ref.watch(searchPlaylistsProvider(searchState.query));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -108,17 +90,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                     onChanged: _onSearchChanged,
                                     style: Theme.of(context).textTheme.bodyLarge,
                                     decoration: const InputDecoration(
-                                      hintText: 'Search songs, albums, playlists...',
+                                      hintText: 'Search songs, artists, albums...',
                                       border: InputBorder.none,
                                     ),
                                   ),
                                 ),
-                                if (query.isNotEmpty)
+                                if (searchState.query.isNotEmpty)
                                   IconButton(
                                     icon: const Icon(Icons.close_rounded, size: 18),
                                     onPressed: () {
                                       _controller.clear();
-                                      ref.read(searchQueryProvider.notifier).state = '';
+                                      ref.read(searchProvider.notifier).onQueryChanged('');
                                     },
                                   ),
                               ],
@@ -131,24 +113,93 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
                   // Results
                   Expanded(
-                    child: query.isEmpty
-                        ? Center(
+                    child: searchState.query.isEmpty
+                        ? SingleChildScrollView(
                             child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(
-                                  Icons.search_rounded,
-                                  color: AppColors.textTertiary,
-                                  size: 48,
+                                if (searchState.history.isNotEmpty) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          'Recent Searches',
+                                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark ? Colors.white : AppColors.textPrimary,
+                                              ),
+                                        ),
+                                        TextButton(
+                                          onPressed: () {
+                                            ref.read(searchProvider.notifier).clearAllHistory();
+                                          },
+                                          child: const Text('Clear All'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  ListView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    itemCount: searchState.history.length > 5 ? 5 : searchState.history.length,
+                                    itemBuilder: (context, index) {
+                                      final historyQuery = searchState.history[index];
+                                      return ListTile(
+                                        leading: const Icon(Icons.history_rounded, color: AppColors.textTertiary),
+                                        title: Text(historyQuery),
+                                        trailing: IconButton(
+                                          icon: const Icon(Icons.close_rounded, size: 18),
+                                          onPressed: () {
+                                            ref.read(searchProvider.notifier).removeFromHistory(historyQuery);
+                                          },
+                                        ),
+                                        onTap: () {
+                                          _controller.text = historyQuery;
+                                          ref.read(searchProvider.notifier).onQueryChanged(historyQuery);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ],
+                                // Trending list
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
+                                  child: Text(
+                                    'Trending Searches',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? Colors.white : AppColors.textPrimary,
+                                        ),
+                                  ),
                                 ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  'Search your music library',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(color: AppColors.textTertiary),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      'Coldplay',
+                                      'Taylor Swift',
+                                      'Post Malone',
+                                      'Adele',
+                                      'Drake',
+                                      'The Weeknd',
+                                      'Billie Eilish'
+                                    ].map((tag) {
+                                      return ActionChip(
+                                        label: Text(tag),
+                                        onPressed: () {
+                                          _controller.text = tag;
+                                          ref.read(searchProvider.notifier).onQueryChanged(tag);
+                                          ref.read(searchProvider.notifier).addToHistory(tag);
+                                        },
+                                      );
+                                    }).toList(),
+                                  ),
                                 ),
+                                const SizedBox(height: 120),
                               ],
                             ),
                           )
@@ -157,47 +208,134 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // 1. Songs Results
-                                clipsAsync.when(
-                                  data: (clips) {
-                                    if (clips.isEmpty) return const SizedBox();
-                                    return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                                          child: Text(
-                                            'Songs',
-                                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                                  fontWeight: FontWeight.bold,
-                                                  color: isDark ? Colors.white : AppColors.textPrimary,
-                                                ),
+                                // 1. Local Songs
+                                if (searchState.songs.isNotEmpty) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                                    child: Text(
+                                      'Downloaded Songs',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? Colors.white : AppColors.textPrimary,
                                           ),
-                                        ),
-                                        ListView.builder(
-                                          shrinkWrap: true,
-                                          physics: const NeverScrollableScrollPhysics(),
-                                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                                          itemCount: clips.length,
-                                          itemBuilder: (context, index) {
-                                            final clip = clips[index];
-                                            return _SearchResultTile(
-                                              clip: clip,
-                                              index: index,
-                                              onTap: () {
-                                                ref.read(playerProvider.notifier).playQueue(clips, index);
-                                              },
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                  loading: () => const SizedBox(),
-                                  error: (_, __) => const SizedBox(),
-                                ),
+                                    ),
+                                  ),
+                                  ListView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: searchState.songs.length,
+                                    itemBuilder: (context, index) {
+                                      final clip = searchState.songs[index];
+                                      return _SearchResultTile(
+                                        clip: clip,
+                                        index: index,
+                                        onTap: () {
+                                          ref.read(searchProvider.notifier).addToHistory(searchState.query);
+                                          ref.read(playerProvider.notifier).playQueue(searchState.songs, index);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ],
 
-                                // 2. Albums Results
+                                // 2. Online Search Results
+                                if (searchState.onlineSongs.isNotEmpty) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                                    child: Text(
+                                      'Online Songs',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? Colors.white : AppColors.textPrimary,
+                                          ),
+                                    ),
+                                  ),
+                                  ListView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: searchState.onlineSongs.length,
+                                    itemBuilder: (context, index) {
+                                      final clip = searchState.onlineSongs[index];
+                                      return _SearchResultTile(
+                                        clip: clip,
+                                        index: index,
+                                        isOnline: true,
+                                        onTap: () {
+                                          ref.read(searchProvider.notifier).addToHistory(searchState.query);
+                                          ref.read(playerProvider.notifier).playQueue(searchState.onlineSongs, index);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ],
+
+                                // 2.5 JioSaavn Online Songs Results
+                                if (searchState.saavnSongs.isNotEmpty) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                                    child: Text(
+                                      'JioSaavn Songs',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? Colors.white : AppColors.textPrimary,
+                                          ),
+                                    ),
+                                  ),
+                                  ListView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: searchState.saavnSongs.length,
+                                    itemBuilder: (context, index) {
+                                      final clip = searchState.saavnSongs[index];
+                                      return _SearchResultTile(
+                                        clip: clip,
+                                        index: index,
+                                        isOnline: true,
+                                        onTap: () {
+                                          ref.read(searchProvider.notifier).addToHistory(searchState.query);
+                                          ref.read(playerProvider.notifier).playQueue(searchState.saavnSongs, index);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ],
+
+                                // 2.7 Apple Music Online Songs Results
+                                if (searchState.appleSongs.isNotEmpty) ...[
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+                                    child: Text(
+                                      'Apple Music Songs',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? Colors.white : AppColors.textPrimary,
+                                          ),
+                                    ),
+                                  ),
+                                  ListView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    itemCount: searchState.appleSongs.length,
+                                    itemBuilder: (context, index) {
+                                      final clip = searchState.appleSongs[index];
+                                      return _SearchResultTile(
+                                        clip: clip,
+                                        index: index,
+                                        isOnline: true,
+                                        onTap: () {
+                                          ref.read(searchProvider.notifier).addToHistory(searchState.query);
+                                          ref.read(playerProvider.notifier).playQueue(searchState.appleSongs, index);
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ],
+
+                                // 3. Albums Results
                                 albumsAsync.when(
                                   data: (albumsList) {
                                     if (albumsList.isEmpty) return const SizedBox();
@@ -274,7 +412,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   error: (_, __) => const SizedBox(),
                                 ),
 
-                                // 3. Playlists Results
+                                // 4. Playlists Results
                                 playlistsAsync.when(
                                   data: (playlists) {
                                     if (playlists.isEmpty) return const SizedBox();
@@ -362,8 +500,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                   error: (_, __) => const SizedBox(),
                                 ),
 
-                                // 4. Global Loading / Shimmers
-                                if (clipsAsync.isLoading || albumsAsync.isLoading || playlistsAsync.isLoading)
+                                // 5. Global Loading / Shimmers
+                                if (searchState.isLoading || albumsAsync.isLoading || playlistsAsync.isLoading)
                                   const Center(
                                     child: Padding(
                                       padding: EdgeInsets.all(24.0),
@@ -371,10 +509,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                     ),
                                   ),
 
-                                // 5. Empty State
-                                if (clipsAsync.value?.isEmpty == true &&
+                                // 6. Empty State
+                                if (searchState.songs.isEmpty &&
+                                    searchState.onlineSongs.isEmpty &&
+                                    searchState.saavnSongs.isEmpty &&
+                                    searchState.appleSongs.isEmpty &&
                                     albumsAsync.value?.isEmpty == true &&
-                                    playlistsAsync.value?.isEmpty == true)
+                                    playlistsAsync.value?.isEmpty == true &&
+                                    !searchState.isLoading)
                                   Center(
                                     child: Padding(
                                       padding: const EdgeInsets.only(top: 60),
@@ -424,11 +566,13 @@ class _SearchResultTile extends ConsumerWidget {
   final Clip clip;
   final int index;
   final VoidCallback onTap;
+  final bool isOnline;
 
   const _SearchResultTile({
     required this.clip,
     required this.index,
     required this.onTap,
+    this.isOnline = false,
   });
 
   @override
@@ -437,10 +581,12 @@ class _SearchResultTile extends ConsumerWidget {
     final albums = ref.watch(albumsProvider).value ?? [];
 
     Album? album;
-    try {
-      album = albums.firstWhere((a) => a.id == clip.albumId);
-    } catch (_) {
-      album = null;
+    if (!isOnline) {
+      try {
+        album = albums.firstWhere((a) => a.id == clip.albumId);
+      } catch (_) {
+        album = null;
+      }
     }
 
     final coverColor = album != null
@@ -468,14 +614,32 @@ class _SearchResultTile extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            CachedArtworkImage(
-              imagePath: album?.coverImagePath,
-              size: 44,
-              borderRadius: BorderRadius.circular(10),
-              fallbackColor: coverColor,
-              fallbackIcon: Icons.music_note_rounded,
-              fallbackIconSize: 22,
-            ),
+            isOnline
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      (clip.sourcePlatform == 'jiosaavn' || clip.sourcePlatform == 'applemusic')
+                          ? (clip.genre ?? '')
+                          : 'https://i.ytimg.com/vi/${clip.id}/hqdefault.jpg',
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, _, __) => Container(
+                        width: 44,
+                        height: 44,
+                        color: coverColor,
+                        child: const Icon(Icons.music_note_rounded, size: 22, color: Colors.white),
+                      ),
+                    ),
+                  )
+                : CachedArtworkImage(
+                    imagePath: album?.coverImagePath,
+                    size: 44,
+                    borderRadius: BorderRadius.circular(10),
+                    fallbackColor: coverColor,
+                    fallbackIcon: Icons.music_note_rounded,
+                    fallbackIconSize: 22,
+                  ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -495,13 +659,36 @@ class _SearchResultTile extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Text(
                     clip.artist != null && clip.artist!.isNotEmpty && clip.artist != 'Unknown Artist'
-                        ? '${clip.artist} • ${clip.platformIcon} ${clip.formattedDuration}'
-                        : '${clip.platformIcon} ${clip.formattedDuration}',
+                        ? '${clip.artist} • ${isOnline ? (clip.sourcePlatform == 'jiosaavn' ? "🌐 JioSaavn" : (clip.sourcePlatform == 'applemusic' ? "🌐 Apple Music" : "🌐 YT Music")) : "💾 Offline"} • ${clip.formattedDuration}'
+                        : '${isOnline ? (clip.sourcePlatform == 'jiosaavn' ? "🌐 JioSaavn" : (clip.sourcePlatform == 'applemusic' ? "🌐 Apple Music" : "🌐 YT Music")) : "💾 Offline"} • ${clip.formattedDuration}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
                   ),
                 ],
               ),
             ),
+            if (isOnline) ...[
+              IconButton(
+                icon: const Icon(Icons.download_for_offline_rounded, color: AppColors.primary),
+                onPressed: () {
+                  final downloadUrl = (clip.sourcePlatform == 'jiosaavn' || clip.sourcePlatform == 'applemusic')
+                      ? 'ytsearch:${clip.title} ${clip.artist ?? ""}'
+                      : (clip.sourceUrl ?? '');
+                  ref.read(queueProvider.notifier).addToQueue(
+                        url: downloadUrl,
+                        platform: 'youtube',
+                        title: clip.title,
+                        artist: clip.artist,
+                      );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Added "${clip.title}" to downloads queue!'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 4),
+            ],
             Icon(
               isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_filled_rounded,
               color: AppColors.primary,

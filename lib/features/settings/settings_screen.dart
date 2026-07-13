@@ -22,6 +22,7 @@ import '../player/audio_handler.dart';
 import '../../main.dart';
 import 'legal_dialog.dart';
 import 'theme_provider.dart';
+import 'plugins_provider.dart';
 import '../import/ImportNotifier.dart';
 
 // Dynamically watch library statistics and storage usage
@@ -328,6 +329,51 @@ class SettingsScreen extends ConsumerWidget {
                                 ? 'Active: ${_formatSleepTimerRemaining(ref.watch(playerProvider).sleepTimerRemaining!)} remaining'
                                 : 'Turn off playback automatically',
                             onTap: () => _showSleepTimerSheet(context, ref),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Group B.5: Music Plugins
+                      _buildGroupHeader(context, 'Music Resolver Plugins'),
+                      _buildGroupCard(
+                        context,
+                        children: [
+                          _buildSwitchListTile(
+                            context,
+                            icon: Icons.music_note_rounded,
+                            iconColor: AppColors.primary,
+                            title: 'YouTube Music Plugin',
+                            subtitle: 'Search and resolve official YT tracks',
+                            value: ref.watch(pluginsProvider).isYoutubeEnabled,
+                            onChanged: (val) {
+                              ref.read(pluginsProvider.notifier).toggleYoutube(val);
+                            },
+                          ),
+                          _buildDivider(),
+                          _buildSwitchListTile(
+                            context,
+                            icon: Icons.language_rounded,
+                            iconColor: AppColors.skyBlue,
+                            title: 'JioSaavn Plugin',
+                            subtitle: 'Search Indian & regional music catalogs',
+                            value: ref.watch(pluginsProvider).isJiosaavnEnabled,
+                            onChanged: (val) {
+                              ref.read(pluginsProvider.notifier).toggleJiosaavn(val);
+                            },
+                          ),
+                          _buildDivider(),
+                          _buildSwitchListTile(
+                            context,
+                            icon: Icons.apple_rounded,
+                            iconColor: isDark ? Colors.white : Colors.black,
+                            title: 'Apple Music Plugin',
+                            subtitle: 'Search global iTunes & Apple Music catalogs',
+                            value: ref.watch(pluginsProvider).isApplemusicEnabled,
+                            onChanged: (val) {
+                              ref.read(pluginsProvider.notifier).toggleApplemusic(val);
+                            },
                           ),
                         ],
                       ),

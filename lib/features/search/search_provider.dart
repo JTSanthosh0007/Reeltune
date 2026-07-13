@@ -7,18 +7,21 @@ import '../../core/db/clip_repository.dart';
 import '../../core/db/album_repository.dart';
 import '../../core/db/queue_repository.dart';
 import '../library/PlaylistRepository.dart';
+import '../../core/network/api_client.dart';
 
 import '../../core/models/clip.dart';
 import '../../core/models/album.dart';
 import '../../core/models/playlist.dart';
 import '../../core/models/queue_item.dart';
+import '../settings/plugins_provider.dart';
 
 final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
   final clipRepo = ref.watch(clipRepositoryProvider);
   final albumRepo = ref.watch(albumRepositoryProvider);
   final playlistRepo = ref.watch(playlistRepositoryProvider);
   final queueRepo = ref.watch(queueRepositoryProvider);
-  return SearchNotifier(clipRepo, albumRepo, playlistRepo, queueRepo);
+  final apiClient = ref.watch(apiClientProvider);
+  return SearchNotifier(clipRepo, albumRepo, playlistRepo, queueRepo, apiClient, ref);
 });
 
 class SearchState {
@@ -26,6 +29,9 @@ class SearchState {
   final bool isLoading;
   final List<String> history;
   final List<Clip> songs;
+  final List<Clip> onlineSongs;
+  final List<Clip> saavnSongs;
+  final List<Clip> appleSongs;
   final List<Album> albums;
   final List<Playlist> playlists;
   final List<String> artists;
@@ -36,6 +42,9 @@ class SearchState {
     required this.isLoading,
     required this.history,
     required this.songs,
+    required this.onlineSongs,
+    required this.saavnSongs,
+    required this.appleSongs,
     required this.albums,
     required this.playlists,
     required this.artists,
@@ -47,6 +56,9 @@ class SearchState {
         isLoading: false,
         history: [],
         songs: [],
+        onlineSongs: [],
+        saavnSongs: [],
+        appleSongs: [],
         albums: [],
         playlists: [],
         artists: [],
@@ -58,6 +70,9 @@ class SearchState {
     bool? isLoading,
     List<String>? history,
     List<Clip>? songs,
+    List<Clip>? onlineSongs,
+    List<Clip>? saavnSongs,
+    List<Clip>? appleSongs,
     List<Album>? albums,
     List<Playlist>? playlists,
     List<String>? artists,
@@ -68,6 +83,9 @@ class SearchState {
       isLoading: isLoading ?? this.isLoading,
       history: history ?? this.history,
       songs: songs ?? this.songs,
+      onlineSongs: onlineSongs ?? this.onlineSongs,
+      saavnSongs: saavnSongs ?? this.saavnSongs,
+      appleSongs: appleSongs ?? this.appleSongs,
       albums: albums ?? this.albums,
       playlists: playlists ?? this.playlists,
       artists: artists ?? this.artists,
@@ -81,6 +99,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
   final AlbumRepository _albumRepo;
   final PlaylistRepository _playlistRepo;
   final QueueRepository _queueRepo;
+  final ApiClient _apiClient;
+  final Ref _ref;
   Timer? _debounce;
 
   SearchNotifier(
@@ -88,6 +108,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
     this._albumRepo,
     this._playlistRepo,
     this._queueRepo,
+    this._apiClient,
+    this._ref,
   ) : super(SearchState.initial()) {
     _loadHistory();
   }
@@ -140,6 +162,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
       state = state.copyWith(
         isLoading: false,
         songs: [],
+        onlineSongs: [],
+        saavnSongs: [],
+        appleSongs: [],
         albums: [],
         playlists: [],
         artists: [],
@@ -165,12 +190,18 @@ class SearchNotifier extends StateNotifier<SearchState> {
         _albumRepo.searchAlbums(cleanQuery),
         _playlistRepo.searchPlaylists(cleanQuery),
         _queueRepo.getAllQueueItems(),
+        _performOnlineSearch(cleanQuery),
       ]);
 
       final allClips = results[0] as List<Clip>;
       final albums = results[1] as List<Album>;
       final playlists = results[2] as List<Playlist>;
       final allQueue = results[3] as List<QueueItem>;
+      final onlineResultMap = results[4] as Map<String, List<Clip>>;
+
+      final onlineClips = onlineResultMap['ytmusic'] ?? [];
+      final saavnClips = onlineResultMap['jiosaavn'] ?? [];
+      final appleClips = onlineResultMap['applemusic'] ?? [];
 
       // Sort clips by scoring algorithm (Best Match -> Recent -> Favorite)
       allClips.sort((a, b) => _scoreClip(b, cleanQuery).compareTo(_scoreClip(a, cleanQuery)));
@@ -194,12 +225,39 @@ class SearchNotifier extends StateNotifier<SearchState> {
         }
       }
 
+      for (final clip in onlineClips) {
+        if (clip.artist != null &&
+            clip.artist!.isNotEmpty &&
+            clip.artist != 'Unknown Artist') {
+          matchingArtists.add(clip.artist!);
+        }
+      }
+
+      for (final clip in saavnClips) {
+        if (clip.artist != null &&
+            clip.artist!.isNotEmpty &&
+            clip.artist != 'Unknown Artist') {
+          matchingArtists.add(clip.artist!);
+        }
+      }
+
+      for (final clip in appleClips) {
+        if (clip.artist != null &&
+            clip.artist!.isNotEmpty &&
+            clip.artist != 'Unknown Artist') {
+          matchingArtists.add(clip.artist!);
+        }
+      }
+
       final elapsed = DateTime.now().difference(startTime).inMilliseconds;
       debugPrint('[UniversalSearch] Search completed in ${elapsed}ms');
 
       state = state.copyWith(
         isLoading: false,
         songs: allClips,
+        onlineSongs: onlineClips,
+        saavnSongs: saavnClips,
+        appleSongs: appleClips,
         albums: albums,
         playlists: playlists,
         artists: matchingArtists.toList(),
@@ -209,6 +267,105 @@ class SearchNotifier extends StateNotifier<SearchState> {
       debugPrint('[UniversalSearch] Search error: $e');
       state = state.copyWith(isLoading: false);
     }
+  }
+
+  Future<Map<String, List<Clip>>> _performOnlineSearch(String query) async {
+    try {
+      final plugins = _ref.read(pluginsProvider);
+
+      final response = await _apiClient.get<Map<String, dynamic>>(
+        '/api/search',
+        queryParameters: {'q': query},
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data!;
+        
+        final List<Clip> ytmusic;
+        if (plugins.isYoutubeEnabled) {
+          final ytList = data['ytmusic'] as List<dynamic>? ?? [];
+          ytmusic = ytList.map((item) {
+            final map = item as Map<String, dynamic>;
+            final id = map['id'] as String;
+            return Clip(
+              id: id,
+              albumId: 'online',
+              title: map['title'] as String? ?? 'Unknown Title',
+              filePath: '', // Empty path indicates it's an online stream
+              durationMs: ((map['duration'] as num? ?? 180) * 1000).toInt(),
+              sourceUrl: 'https://www.youtube.com/watch?v=$id',
+              sourcePlatform: 'youtube',
+              artist: map['artist'] as String? ?? 'Unknown Artist',
+              albumName: 'YouTube Music',
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+            );
+          }).toList();
+        } else {
+          ytmusic = [];
+        }
+
+        final List<Clip> jiosaavn;
+        if (plugins.isJiosaavnEnabled) {
+          final saavnList = data['jiosaavn'] as List<dynamic>? ?? [];
+          jiosaavn = saavnList.map((item) {
+            final map = item as Map<String, dynamic>;
+            final id = map['id'] as String;
+            return Clip(
+              id: id,
+              albumId: 'online_saavn',
+              title: map['title'] as String? ?? 'Unknown Title',
+              filePath: '', // Empty path indicates it's an online stream
+              durationMs: 180000, // JioSaavn autocomplete has no duration, default to 3 minutes
+              sourceUrl: map['url'] as String? ?? '',
+              sourcePlatform: 'jiosaavn',
+              artist: map['artist'] as String? ?? 'Unknown Artist',
+              albumName: map['album'] as String? ?? 'JioSaavn',
+              genre: map['thumbnail'] as String?, // Store thumbnail URL here
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+            );
+          }).toList();
+        } else {
+          jiosaavn = [];
+        }
+
+        final List<Clip> applemusic;
+        if (plugins.isApplemusicEnabled) {
+          final appleList = data['applemusic'] as List<dynamic>? ?? [];
+          applemusic = appleList.map((item) {
+            final map = item as Map<String, dynamic>;
+            final id = map['id'] as String;
+            return Clip(
+              id: id,
+              albumId: 'online_apple',
+              title: map['title'] as String? ?? 'Unknown Title',
+              filePath: '', // Empty path indicates it's an online stream
+              durationMs: ((map['duration'] as num? ?? 180) * 1000).toInt(),
+              sourceUrl: map['url'] as String? ?? '',
+              sourcePlatform: 'applemusic',
+              artist: map['artist'] as String? ?? 'Unknown Artist',
+              albumName: map['album'] as String? ?? 'Apple Music',
+              genre: map['thumbnail'] as String?, // Store artwork URL here
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+            );
+          }).toList();
+        } else {
+          applemusic = [];
+        }
+
+        return {
+          'ytmusic': ytmusic,
+          'jiosaavn': jiosaavn,
+          'applemusic': applemusic,
+        };
+      }
+    } catch (err) {
+      debugPrint('[UniversalSearch] Online search failed: $err');
+    }
+    return {
+      'ytmusic': [],
+      'jiosaavn': [],
+      'applemusic': [],
+    };
   }
 
   int _scoreClip(Clip clip, String query) {

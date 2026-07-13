@@ -608,7 +608,136 @@ async function downloadWithCobalt(url, outputPath) {
   throw new Error(`All Cobalt mirrors failed. Last error: ${lastError?.message || lastError}`);
 }
 
+function searchYoutubeTracks(query) {
+  return new Promise((resolve, reject) => {
+    const isWin = os.platform() === 'win32';
+    const shellOption = isWin;
+    const commandBin = isWin ? `"${YTDLP_BIN}"` : YTDLP_BIN;
+    const userAgentStr = isWin 
+      ? '"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"'
+      : 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
+    const isUrl = query.startsWith('http://') || query.startsWith('https://');
+    const searchTarget = isUrl ? query : `ytsearch10:${query}`;
+
+    const args = [
+      searchTarget,
+      '--flat-playlist',
+      '--dump-json',
+      '--no-warnings',
+      '--user-agent', userAgentStr,
+      '--force-ipv4',
+    ];
+
+    execFile(commandBin, args, { timeout: 15000, shell: shellOption }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[Search] yt-dlp search failed:', stderr || err.message);
+        return reject(new Error('Search failed'));
+      }
+
+      try {
+        const results = stdout.split('\n').filter(Boolean).map(line => {
+          try {
+            const data = JSON.parse(line);
+            return {
+              id: data.id,
+              title: data.title || 'Unknown Title',
+              artist: data.uploader || data.channel || 'Unknown Artist',
+              duration: data.duration || 180,
+              thumbnail: `https://i.ytimg.com/vi/${data.id}/hqdefault.jpg`,
+              url: `https://www.youtube.com/watch?v=${data.id}`
+            };
+          } catch (e) {
+            return null;
+          }
+        }).filter(Boolean);
+
+        resolve(results);
+      } catch (parseErr) {
+        reject(parseErr);
+      }
+    });
+  });
+}
+
+async function resolveStreamUrl(videoId) {
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  
+  try {
+    const mirrors = [
+      'https://api.cobalt.tools',
+      'https://kityune.imput.net',
+      'https://sunny.imput.net',
+      'https://nachos.imput.net',
+      'https://subito-c.meowing.de',
+      'https://nuko-c.meowing.de',
+      'https://api.qwkuns.me',
+      'https://cobalt.canine.tools',
+      'https://cobaltapi.squair.xyz'
+    ];
+
+    for (const mirror of mirrors) {
+      try {
+        console.log(`[Stream] Attempting streaming resolution via Cobalt mirror: ${mirror}`);
+        const response = await fetch(`${mirror}/api/json`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            url: url,
+            downloadMode: 'audio',
+            isAudioOnly: true,
+            audioFormat: 'mp3'
+          })
+        });
+
+        if (response.ok) {
+          const resJson = await response.json();
+          if (resJson.url) {
+            console.log(`[Stream] Cobalt succeeded resolved stream URL: ${resJson.url}`);
+            return resJson.url;
+          }
+        }
+      } catch (err) {
+        // continue
+      }
+    }
+  } catch (e) {
+    // continue
+  }
+
+  return new Promise((resolve, reject) => {
+    const isWin = os.platform() === 'win32';
+    const shellOption = isWin;
+    const commandBin = isWin ? `"${YTDLP_BIN}"` : YTDLP_BIN;
+    const args = [
+      url,
+      '-g',
+      '-f', 'bestaudio[ext=m4a]/bestaudio/best',
+      '--no-warnings',
+      '--force-ipv4'
+    ];
+
+    execFile(commandBin, args, { timeout: 15000, shell: shellOption }, (err, stdout, stderr) => {
+      if (err) {
+        console.error('[Stream] yt-dlp stream resolution failed:', stderr || err.message);
+        return reject(new Error('Failed to resolve stream URL'));
+      }
+      const streamUrl = stdout.trim();
+      if (streamUrl) {
+        resolve(streamUrl);
+      } else {
+        reject(new Error('No stream URL resolved'));
+      }
+    });
+  });
+}
+
 module.exports = {
   extractAudio,
-  ExtractionError
+  ExtractionError,
+  searchYoutubeTracks,
+  resolveStreamUrl
 };

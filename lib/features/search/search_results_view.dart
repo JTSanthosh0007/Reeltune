@@ -14,6 +14,7 @@ import '../albums/album_detail_screen.dart';
 import '../library/PlaylistsProvider.dart';
 import '../library/playlist_detail_screen.dart';
 import '../player/player_provider.dart';
+import '../queue/queue_provider.dart';
 import 'search_provider.dart';
 
 class SearchResultsView extends ConsumerWidget {
@@ -42,12 +43,22 @@ class SearchResultsView extends ConsumerWidget {
     }
 
     final hasSongs = searchState.songs.isNotEmpty;
+    final hasOnlineSongs = searchState.onlineSongs.isNotEmpty;
+    final hasSaavnSongs = searchState.saavnSongs.isNotEmpty;
+    final hasAppleSongs = searchState.appleSongs.isNotEmpty;
     final hasAlbums = searchState.albums.isNotEmpty;
     final hasPlaylists = searchState.playlists.isNotEmpty;
     final hasArtists = searchState.artists.isNotEmpty;
     final hasQueue = searchState.queue.isNotEmpty;
 
-    if (!hasSongs && !hasAlbums && !hasPlaylists && !hasArtists && !hasQueue) {
+    if (!hasSongs &&
+        !hasOnlineSongs &&
+        !hasSaavnSongs &&
+        !hasAppleSongs &&
+        !hasAlbums &&
+        !hasPlaylists &&
+        !hasArtists &&
+        !hasQueue) {
       return _buildNoResultsView(context, isDark);
     }
 
@@ -57,6 +68,9 @@ class SearchResultsView extends ConsumerWidget {
       children: [
         if (hasQueue) _buildQueueSection(context, ref, searchState.queue, isDark),
         if (hasSongs) _buildSongsSection(context, ref, searchState.songs, isDark),
+        if (hasOnlineSongs) _buildOnlineSongsSection(context, ref, 'Online YouTube Songs', searchState.onlineSongs, isDark),
+        if (hasSaavnSongs) _buildOnlineSongsSection(context, ref, 'JioSaavn Online Songs', searchState.saavnSongs, isDark),
+        if (hasAppleSongs) _buildOnlineSongsSection(context, ref, 'Apple Music Online Songs', searchState.appleSongs, isDark),
         if (hasAlbums) _buildAlbumsSection(context, ref, searchState.albums, isDark),
         if (hasPlaylists) _buildPlaylistsSection(context, ref, searchState.playlists, isDark),
         if (hasArtists) _buildArtistsSection(context, ref, searchState.artists, isDark),
@@ -522,6 +536,110 @@ class SearchResultsView extends ConsumerWidget {
             },
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildOnlineSongsSection(
+    BuildContext context,
+    WidgetRef ref,
+    String title,
+    List<Clip> songs,
+    bool isDark,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(context, title, isDark),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: songs.length,
+          itemBuilder: (context, index) {
+            final song = songs[index];
+            final playerState = ref.watch(playerProvider);
+            final isCurrent = playerState.currentClip?.id == song.id;
+            final isPlaying = isCurrent && playerState.isPlaying;
+
+            final coverColor = AppColors.primary;
+
+            return ListTile(
+              leading: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  (song.sourcePlatform == 'jiosaavn' || song.sourcePlatform == 'applemusic')
+                      ? (song.genre ?? '')
+                      : 'https://i.ytimg.com/vi/${song.id}/hqdefault.jpg',
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, _, __) => Container(
+                    width: 48,
+                    height: 48,
+                    color: coverColor,
+                    child: const Icon(Icons.music_note_rounded, size: 22, color: Colors.white),
+                  ),
+                ),
+              ),
+              title: Text(
+                song.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: isCurrent ? AppColors.primary : (isDark ? Colors.white : AppColors.textPrimary),
+                ),
+              ),
+              subtitle: Text(
+                '${song.artist ?? "ReelTune"} • ${song.sourcePlatform == "jiosaavn" ? "🌐 JioSaavn" : (song.sourcePlatform == "applemusic" ? "🌐 Apple Music" : "🌐 YT Music")} • ${song.formattedDuration}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.download_for_offline_rounded, color: AppColors.primary),
+                    onPressed: () {
+                      final downloadUrl = (song.sourcePlatform == 'jiosaavn' || song.sourcePlatform == 'applemusic')
+                          ? 'ytsearch:${song.title} ${song.artist ?? ""}'
+                          : (song.sourceUrl ?? '');
+                      ref.read(queueProvider.notifier).addToQueue(
+                            url: downloadUrl,
+                            platform: 'youtube',
+                            title: song.title,
+                            artist: song.artist,
+                          );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Added "${song.title}" to downloads queue!'),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                      color: AppColors.primary,
+                      size: 32,
+                    ),
+                    onPressed: () {
+                      ref.read(searchProvider.notifier).addToHistory(query);
+                      if (isCurrent) {
+                        ref.read(playerProvider.notifier).togglePlayPause();
+                      } else {
+                        ref.read(playerProvider.notifier).playQueue(songs, index);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        const Divider(height: 24, indent: 20, endIndent: 20),
       ],
     );
   }

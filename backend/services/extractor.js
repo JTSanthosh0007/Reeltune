@@ -626,10 +626,11 @@ function searchYoutubeTracks(query) {
       '--dump-json',
       '--no-warnings',
       '--user-agent', userAgentStr,
+      '--extractor-args', 'youtube:player_client=android,ios,tv,web',
       '--force-ipv4',
     ];
 
-    execFile(commandBin, args, { timeout: 15000, shell: shellOption }, (err, stdout, stderr) => {
+    execFile(commandBin, args, { timeout: 4000, shell: shellOption }, (err, stdout, stderr) => {
       if (err) {
         console.error('[Search] yt-dlp search failed:', stderr || err.message);
         return reject(new Error('Search failed'));
@@ -712,11 +713,14 @@ async function resolveStreamUrl(videoId) {
     const isWin = os.platform() === 'win32';
     const shellOption = isWin;
     const commandBin = isWin ? `"${YTDLP_BIN}"` : YTDLP_BIN;
+    const userAgentStr = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
     const args = [
       url,
       '-g',
       '-f', 'bestaudio[ext=m4a]/bestaudio/best',
       '--no-warnings',
+      '--user-agent', userAgentStr,
+      '--extractor-args', 'youtube:player_client=android,ios,tv,web',
       '--force-ipv4'
     ];
 

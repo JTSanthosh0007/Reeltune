@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -130,10 +131,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Duration _lastDuration = Duration.zero;
   String? _lastLoggedClipId;
 
+  LocalStreamServer? _streamServer;
+
   PlayerNotifier(this._ref) : super(const PlayerState()) {
+    _initServer();
     _initListeners();
     _restoreQueueState();
     _restoreEqualizerState();
+  }
+
+  Future<void> _initServer() async {
+    _streamServer = LocalStreamServer(_ref.read(musicResolverServiceProvider));
+    await _streamServer!.start();
   }
 
   ReelTuneAudioHandler get _handler => audioHandler as ReelTuneAudioHandler;
@@ -280,13 +289,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       mediaItems.add(mediaItem);
 
       if (isOnline) {
-        sources.add(
-          ResolvedYoutubeAudioSource(
-            clip,
-            _ref.read(musicResolverServiceProvider),
-            tag: mediaItem,
-          ),
-        );
+        final localUrl = _streamServer?.getUrl(clip) ?? '';
+        sources.add(AudioSource.uri(Uri.parse(localUrl), tag: mediaItem));
       } else {
         sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
       }
@@ -523,13 +527,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         mediaItems.add(mediaItem);
 
         if (isOnline) {
-          sources.add(
-            ResolvedYoutubeAudioSource(
-              clip,
-              _ref.read(musicResolverServiceProvider),
-              tag: mediaItem,
-            ),
-          );
+          final localUrl = _streamServer?.getUrl(clip) ?? '';
+          sources.add(AudioSource.uri(Uri.parse(localUrl), tag: mediaItem));
         } else {
           sources.add(AudioSource.file(clip.filePath, tag: mediaItem));
         }
@@ -630,77 +629,69 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _playbackStateSub?.cancel();
     _mediaItemSub?.cancel();
     _sleepTimer?.cancel();
+    _streamServer?.stop();
     super.dispose();
   }
 }
 
-class ResolvedYoutubeAudioSource extends StreamAudioSource {
-  final Clip clip;
+class LocalStreamServer {
+  HttpServer? _server;
   final MusicResolverService resolver;
-  final Dio _dio = Dio();
-  String? _resolvedUrl;
 
-  ResolvedYoutubeAudioSource(this.clip, this.resolver, {super.tag});
+  LocalStreamServer(this.resolver);
 
-  Future<String> _getOrResolveUrl() async {
-    if (_resolvedUrl != null) return _resolvedUrl!;
+  Future<void> start() async {
+    try {
+      _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      debugPrint('[LocalStreamServer] Running on port ${_server!.port}');
 
-    final sourcePlatform = clip.sourcePlatform;
-    String? streamUrl;
-    if (sourcePlatform == 'youtube') {
-      streamUrl = await resolver.resolveYoutubeStreamUrl(clip.id);
-    } else if (sourcePlatform == 'jiosaavn' || sourcePlatform == 'applemusic') {
-      streamUrl = await resolver.resolveSongQueryToStreamUrl(clip.title, clip.artist ?? '');
+      _server!.listen((HttpRequest request) async {
+        try {
+          final path = request.uri.path;
+          if (path == '/stream') {
+            final id = request.uri.queryParameters['id'] ?? '';
+            final platform = request.uri.queryParameters['platform'] ?? '';
+            final title = request.uri.queryParameters['title'] ?? '';
+            final artist = request.uri.queryParameters['artist'] ?? '';
+
+            debugPrint('[LocalStreamServer] Resolving stream query for "$title" - $artist ($platform)');
+            String? streamUrl;
+            if (platform == 'youtube') {
+              streamUrl = await resolver.resolveYoutubeStreamUrl(id);
+            } else {
+              streamUrl = await resolver.resolveSongQueryToStreamUrl(title, artist);
+            }
+
+            if (streamUrl != null) {
+              request.response.statusCode = HttpStatus.temporaryRedirect;
+              request.response.headers.set(HttpHeaders.locationHeader, streamUrl);
+              await request.response.close();
+              debugPrint('[LocalStreamServer] 307 Redirect -> $streamUrl');
+            } else {
+              request.response.statusCode = HttpStatus.notFound;
+              await request.response.close();
+            }
+          } else {
+            request.response.statusCode = HttpStatus.notFound;
+            await request.response.close();
+          }
+        } catch (e) {
+          debugPrint('[LocalStreamServer] Request handler error: $e');
+          request.response.statusCode = HttpStatus.internalServerError;
+          await request.response.close();
+        }
+      });
+    } catch (e) {
+      debugPrint('[LocalStreamServer] Failed to bind to loopback port: $e');
     }
-
-    if (streamUrl == null) {
-      throw Exception('Failed to resolve stream URL for ${clip.title}');
-    }
-
-    _resolvedUrl = streamUrl;
-    return streamUrl;
   }
 
-  @override
-  Future<StreamAudioResponse> request([int? start, int? end]) async {
-    final url = await _getOrResolveUrl();
-    final headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Connection': 'keep-alive',
-      if (start != null) 'Range': 'bytes=$start-${end ?? ""}',
-    };
+  String getUrl(Clip clip) {
+    final port = _server?.port ?? 8080;
+    return 'http://127.0.0.1:$port/stream?id=${clip.id}&platform=${clip.sourcePlatform}&title=${Uri.encodeComponent(clip.title)}&artist=${Uri.encodeComponent(clip.artist ?? "")}';
+  }
 
-    final response = await _dio.get<ResponseBody>(
-      url,
-      options: Options(
-        responseType: ResponseType.stream,
-        headers: headers,
-      ),
-    );
-
-    final contentLength = response.headers.value('content-length');
-    final contentRange = response.headers.value('content-range');
-
-    int? totalLength;
-    if (contentLength != null) {
-      totalLength = int.tryParse(contentLength);
-    }
-
-    if (contentRange != null) {
-      final match = RegExp(r'bytes \d+-\d+/(\d+)').firstMatch(contentRange);
-      if (match != null) {
-        totalLength = int.tryParse(match.group(1) ?? '');
-      }
-    }
-
-    return StreamAudioResponse(
-      sourceLength: totalLength,
-      contentLength: contentLength != null ? int.tryParse(contentLength) : null,
-      offset: start ?? 0,
-      stream: response.data!.stream,
-      contentType: 'audio/mpeg',
-    );
+  void stop() {
+    _server?.close();
   }
 }

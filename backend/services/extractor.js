@@ -23,7 +23,8 @@ if (fs.existsSync(localFfmpeg)) {
   }
 }
 
-const localYtDlp = path.join(__dirname, '..', 'yt-dlp.exe');
+const ytDlpName = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+const localYtDlp = path.join(__dirname, '..', ytDlpName);
 const YTDLP_BIN = process.env.YTDLP_PATH || (fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp');
 
 // Instagram cache configuration

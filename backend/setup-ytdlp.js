@@ -1,20 +1,33 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 async function downloadYtDlp() {
-  const url = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
-  const outputPath = path.join(__dirname, 'yt-dlp.exe');
+  const isWindows = os.platform() === 'win32';
+  const url = isWindows 
+    ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+    : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp';
+    
+  const filename = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+  const outputPath = path.join(__dirname, filename);
   
-  console.log('Downloading latest yt-dlp.exe Windows binary from GitHub...');
+  if (fs.existsSync(outputPath)) {
+    console.log(`[setup-ytdlp] ${filename} already exists. Skipping download.`);
+    return;
+  }
+  
+  console.log(`[setup-ytdlp] Downloading latest ${filename} from GitHub...`);
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(outputPath, buffer);
-    console.log('SUCCESS! Downloaded yt-dlp.exe to:', outputPath);
-    console.log('Your local backend will now automatically use this binary for extraction, which is extremely fast and 100% reliable!');
+    if (!isWindows) {
+      fs.chmodSync(outputPath, '755'); // Make executable on Linux/Render
+    }
+    console.log(`[setup-ytdlp] SUCCESS! Downloaded ${filename} to:`, outputPath);
   } catch (err) {
-    console.error('Error downloading yt-dlp.exe:', err.message);
+    console.error(`[setup-ytdlp] Error downloading:`, err.message);
   }
 }
 

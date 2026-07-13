@@ -3,8 +3,10 @@ const { execFile } = require('child_process');
 const { detectPlatform } = require('./platformDetection');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
-const localYtDlp = path.join(__dirname, '..', 'yt-dlp.exe');
+const ytDlpName = os.platform() === 'win32' ? 'yt-dlp.exe' : 'yt-dlp';
+const localYtDlp = path.join(__dirname, '..', ytDlpName);
 const YTDLP_BIN = process.env.YTDLP_PATH || (fs.existsSync(localYtDlp) ? localYtDlp : 'yt-dlp');
 
 async function resolveRedirect(url) {

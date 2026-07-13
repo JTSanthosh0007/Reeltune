@@ -618,7 +618,14 @@ function searchYoutubeTracks(query) {
       : 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
 
     const isUrl = query.startsWith('http://') || query.startsWith('https://');
-    const searchTarget = isUrl ? query : `ytsearch5:${query}`;
+    const sanitizedQuery = isUrl
+        ? query
+        : query
+            .replace(/["']/g, ' ')
+            .replace(/[&|;$%@<>]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    const searchTarget = isUrl ? query : `ytsearch5:${sanitizedQuery}`;
 
     const args = [
       searchTarget,

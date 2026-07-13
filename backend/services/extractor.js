@@ -377,6 +377,13 @@ async function extractAudio(url, jobId, quality = 'high') {
 
 function downloadWithYtDlp(url, outputPath, jobId) {
   return new Promise((resolve, reject) => {
+    const isWin = os.platform() === 'win32';
+    const shellOption = isWin;
+    const commandBin = isWin ? `"${YTDLP_BIN}"` : YTDLP_BIN;
+    const userAgentStr = isWin 
+      ? '"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"'
+      : 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
     const infoArgs = [
       url,
       '--print', 'title',
@@ -384,7 +391,7 @@ function downloadWithYtDlp(url, outputPath, jobId) {
       '--no-download',
       '--no-warnings',
       '--no-check-certificates',
-      '--user-agent', '"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"',
+      '--user-agent', userAgentStr,
       '--extractor-args', 'youtube:player_client=android,ios,tv,web',
       '--force-ipv4',
     ];
@@ -392,7 +399,7 @@ function downloadWithYtDlp(url, outputPath, jobId) {
     let title = 'Audio Clip';
     let durationMs = 180000;
 
-    const infoProc = execFile(`"${YTDLP_BIN}"`, infoArgs, { timeout: 30000, shell: true }, (infoErr, infoStdout) => {
+    const infoProc = execFile(commandBin, infoArgs, { timeout: 30000, shell: shellOption }, (infoErr, infoStdout) => {
       unregisterJobTask(jobId, infoProc);
       
       if (infoErr && infoErr.code === 'ENOENT') {
@@ -423,13 +430,13 @@ function downloadWithYtDlp(url, outputPath, jobId) {
         '--retries', '5',
         '--retry-sleep', '2',
         '--fragment-retries', '10',
-        '--user-agent', '"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"',
+        '--user-agent', userAgentStr,
         '--referer', 'https://www.google.com/',
         '--extractor-args', 'youtube:player_client=android,ios,tv,web',
         '--force-ipv4',
       ];
 
-      const downloadProc = execFile(`"${YTDLP_BIN}"`, downloadArgs, { timeout: 45000, shell: true }, (err, stdout, stderr) => {
+      const downloadProc = execFile(commandBin, downloadArgs, { timeout: 45000, shell: shellOption }, (err, stdout, stderr) => {
         unregisterJobTask(jobId, downloadProc);
 
         if (err) {

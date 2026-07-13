@@ -187,16 +187,23 @@ async function scrapeGaanaTrack(resolvedUrl) {
 
 function fetchWithYtDlp(resolvedUrl) {
   return new Promise((resolve, reject) => {
+    const isWin = os.platform() === 'win32';
+    const shellOption = isWin;
+    const commandBin = isWin ? `"${YTDLP_BIN}"` : YTDLP_BIN;
+    const userAgentStr = isWin 
+      ? '"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"'
+      : 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
     const args = [
       resolvedUrl,
       '--dump-json',
       '--no-warnings',
       '--no-check-certificates',
-      '--user-agent', '"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"',
+      '--user-agent', userAgentStr,
       '--extractor-args', 'youtube:player_client=android,ios,tv,web',
       '--force-ipv4',
     ];
-    execFile(`"${YTDLP_BIN}"`, args, { timeout: 12000, shell: true }, (err, stdout) => {
+    execFile(commandBin, args, { timeout: 12000, shell: shellOption }, (err, stdout) => {
       if (err) return reject(err);
       try {
         const json = JSON.parse(stdout);

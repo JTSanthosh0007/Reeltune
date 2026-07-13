@@ -738,6 +738,7 @@ router.get('/search', async (req, res) => {
           });
           if (response.ok) {
             const json = await response.json();
+            if (json.songs && json.songs.data) {
               return json.songs.data.map(song => {
                 const imageUrl = (song.image || '').replace('50x50', '500x500').replace('150x150', '500x500');
                 return {

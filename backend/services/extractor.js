@@ -630,7 +630,7 @@ function searchYoutubeTracks(query) {
       '--force-ipv4',
     ];
 
-    execFile(commandBin, args, { timeout: 4000, shell: shellOption }, (err, stdout, stderr) => {
+    execFile(commandBin, args, { timeout: 8000, shell: shellOption }, (err, stdout, stderr) => {
       if (err) {
         console.error('[Search] yt-dlp search failed:', stderr || err.message);
         return reject(new Error('Search failed'));
@@ -724,7 +724,7 @@ async function resolveStreamUrl(videoId) {
       '--force-ipv4'
     ];
 
-    execFile(commandBin, args, { timeout: 15000, shell: shellOption }, (err, stdout, stderr) => {
+    execFile(commandBin, args, { timeout: 8000, shell: shellOption }, (err, stdout, stderr) => {
       if (err) {
         console.error('[Stream] yt-dlp stream resolution failed:', stderr || err.message);
         return reject(new Error('Failed to resolve stream URL'));

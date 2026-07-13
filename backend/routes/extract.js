@@ -8,6 +8,23 @@ const { addExtractionJob, getJobStatus } = require('../services/queue');
 
 const router = express.Router();
 
+function decodeHtmlEntities(str) {
+  if (!str) return '';
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&apos;/g, "'")
+    .replace(/&rsquo;/g, "'")
+    .replace(/&ldquo;/g, '"')
+    .replace(/&rdquo;/g, '"')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&middot;/g, '·');
+}
+
 /**
  * POST /api/extract
  * Submit a URL for audio extraction
@@ -721,14 +738,13 @@ router.get('/search', async (req, res) => {
           });
           if (response.ok) {
             const json = await response.json();
-            if (json.songs && json.songs.data) {
               return json.songs.data.map(song => {
                 const imageUrl = (song.image || '').replace('50x50', '500x500').replace('150x150', '500x500');
                 return {
                   id: song.id,
-                  title: song.title,
-                  artist: song.description || 'Unknown Artist',
-                  album: song.album || 'JioSaavn',
+                  title: decodeHtmlEntities(song.title),
+                  artist: decodeHtmlEntities(song.description || 'Unknown Artist'),
+                  album: decodeHtmlEntities(song.album || 'JioSaavn'),
                   thumbnail: imageUrl,
                   url: song.url || ''
                 };
@@ -752,9 +768,9 @@ router.get('/search', async (req, res) => {
                 const imageUrl = (track.artworkUrl100 || '').replace('100x100bb', '600x600bb');
                 return {
                   id: track.trackId.toString(),
-                  title: track.trackName || 'Unknown Title',
-                  artist: track.artistName || 'Unknown Artist',
-                  album: track.collectionName || 'Apple Music',
+                  title: decodeHtmlEntities(track.trackName || 'Unknown Title'),
+                  artist: decodeHtmlEntities(track.artistName || 'Unknown Artist'),
+                  album: decodeHtmlEntities(track.collectionName || 'Apple Music'),
                   duration: Math.round((track.trackTimeMillis || 180000) / 1000),
                   thumbnail: imageUrl,
                   url: track.trackViewUrl || ''
@@ -786,7 +802,8 @@ router.get('/search', async (req, res) => {
  */
 router.get('/stream/apple', async (req, res) => {
   try {
-    const { title, artist } = req.query;
+    const title = decodeHtmlEntities(req.query.title);
+    const artist = decodeHtmlEntities(req.query.artist);
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
     }
@@ -811,7 +828,8 @@ router.get('/stream/apple', async (req, res) => {
  */
 router.get('/stream/saavn', async (req, res) => {
   try {
-    const { title, artist } = req.query;
+    const title = decodeHtmlEntities(req.query.title);
+    const artist = decodeHtmlEntities(req.query.artist);
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
     }

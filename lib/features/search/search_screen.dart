@@ -71,33 +71,64 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           ),
                         Expanded(
                           child: Container(
+                            height: 52,
                             decoration: BoxDecoration(
-                              color: isDark ? AppColors.darkCard : Colors.white,
-                              borderRadius: BorderRadius.circular(16),
+                              color: isDark ? Colors.white.withValues(alpha: 0.07) : AppColors.gray100,
+                              borderRadius: BorderRadius.circular(26),
                               border: Border.all(
-                                color: isDark ? AppColors.darkBorder : AppColors.surfaceBorder,
+                                color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.transparent,
                               ),
+                              boxShadow: isDark
+                                  ? []
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.03),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
                             ),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             child: Row(
                               children: [
-                                const Icon(Icons.search_rounded, color: AppColors.textTertiary),
-                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.search_rounded,
+                                  color: isDark ? Colors.white70 : AppColors.textSecondary,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 10),
                                 Expanded(
                                   child: TextField(
                                     controller: _controller,
                                     autofocus: true,
                                     onChanged: _onSearchChanged,
-                                    style: Theme.of(context).textTheme.bodyLarge,
-                                    decoration: const InputDecoration(
+                                    style: TextStyle(
+                                      color: isDark ? Colors.white : AppColors.textPrimary,
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    decoration: InputDecoration(
                                       hintText: 'Search songs, artists, albums...',
+                                      hintStyle: TextStyle(
+                                        color: isDark ? Colors.white38 : AppColors.textTertiary,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.normal,
+                                      ),
                                       border: InputBorder.none,
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.zero,
                                     ),
                                   ),
                                 ),
                                 if (searchState.query.isNotEmpty)
                                   IconButton(
-                                    icon: const Icon(Icons.close_rounded, size: 18),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    icon: Icon(
+                                      Icons.close_rounded,
+                                      size: 18,
+                                      color: isDark ? Colors.white60 : AppColors.textSecondary,
+                                    ),
                                     onPressed: () {
                                       _controller.clear();
                                       ref.read(searchProvider.notifier).onQueryChanged('');
